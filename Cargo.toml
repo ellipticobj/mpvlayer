@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+"ratatui" = "0.29.0"
+"ratatui-textarea" = "0.4.1"
+"anyhow" = "1.0.97"
+"crossterm" = "0.28.1"
+"tui-framework-experiment" = "0.4.0"
