@@ -1,43 +1,83 @@
-use std::{error::Error, io, rc::Rc, time::{Duration, Instant}};
+use std::{
+    clone, error::Error, io, process::{
+        Child, Command, Stdio
+    }, rc::Rc, time::{Duration, Instant}
+};
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
     backend::{Backend, CrosstermBackend},
-    layout::{self, Constraint, Direction, Layout, Margin, Rect},
+    layout::{Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Style},
     widgets::{Block, Borders, LineGauge, List, ListItem, Paragraph},
     Terminal,
 };
-use tui_framework_experiment::{Button, ButtonState, ButtonTheme};
+// use tui_framework_experiment::{Button, ButtonState, ButtonTheme};
+use anyhow::Result;
 
+pub mod ytdlp;
 
 struct App {
     running: bool,
-    trackpaused: bool,
     version: String,
+    mpv: Option<Child>,
+    playing: bool,
+    current: CurrentlyPlaying,
+    playlists: Vec<Playlist>,
+    selectedplaylistidx: Option<usize>,
+    selectedtrackidx: Option<usize>
 }
 
+#[derive(Clone)]
 struct Track {
     title: String,
     artist: String,
-    path: String,
+    url: String,
     duration: String,
+}
+
+struct Playlist {
+    title: Option<String>,
+    url: String,
+    tracks: Vec<Track>
+}
+
+struct CurrentlyPlaying {
+    track: Option<Track>,
+    playlist: Option<Playlist>,
+    progress: Option<u16>,
 }
 
 impl App {
     fn new() -> App {
         App {
             running: true,
-            trackpaused: false,
             version: String::from("v0.0.1"),
+            mpv: None,
+            playing: false,
+            current: CurrentlyPlaying { track: None, playlist: None, progress: None },
+            playlists: vec![Playlist {
+                title: Some(String::from("test playlist")),
+                url: String::from("testurl"),
+                tracks: vec![Track {
+                    title: String::from("track 1"),
+                    artist: String::from("artist 1"),
+                    url: String::from("https://www.youtube.com/watch?v=eDshx6Rg9Hs"),
+                    duration: String::from("2:45"),
+                }],
+            }],
+            selectedplaylistidx: Some(0),
+            selectedtrackidx: Some(0),
         }
     }
 
-    fn ontick(&mut self) {}
+    fn ontick(&mut self) {
+        
+    }
 
     fn onkey(&mut self, key: KeyCode) {
         match key {
@@ -45,29 +85,84 @@ impl App {
                 self.running = false;
             }
             KeyCode::Char(' ') => {
-                self.trackpaused = !self.trackpaused;
+                
+                self.playing = !self.playing;
             }
             KeyCode::Char('j') => {
-                // previous track
+                // skip track
             }
             KeyCode::Char('l') => {
-                // next track
+                // unskip track
+            }
+            KeyCode::Left => {
+                // select next track
+                if let Some(playlist_index) = self.selectedplaylistidx {
+                    if let Some(track_index) = self.selectedtrackidx {
+                        let playlist = &self.playlists[playlist_index];
+                        if track_index < playlist.tracks.len() - 1 {
+                            self.selectedtrackidx = Some(track_index + 1);
+                        }
+                    }
+                }
+            }
+            KeyCode::Right => {
+                // select previous track
+                if let Some(track_index) = self.selectedtrackidx {
+                    if track_index > 0 {
+                        self.selectedtrackidx = Some(track_index - 1);
+                    }
+                }
+            }
+            KeyCode::Up => {
+                // select next playlist
+                if let Some(playlist_index) = self.selectedplaylistidx {
+                    if playlist_index < self.playlists.len() - 1 {
+                        self.selectedplaylistidx = Some(playlist_index + 1);
+                    }
+                }
+            }
+            KeyCode::Down => {
+                // select previous playlist
+                if let Some(playlist_index) = self.selectedplaylistidx {
+                    if playlist_index > 0 {
+                        self.selectedplaylistidx = Some(playlist_index - 1);
+                    }
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(playlist_index) = self.selectedplaylistidx {
+                    if let Some(track_index) = self.selectedtrackidx {
+                        let track = &self.playlists[playlist_index].tracks[track_index];
+                        self.mpv = startmpv(&track.url).ok();
+                    }
+                }
             }
             _ => {}
         }
     }
 }
 
-fn createplaylist() -> Vec<ListItem<'static>> {
-    let playlist = vec![
-        Track {
-            title: String::from("track 1"),
-            artist: String::from("artist 1"),
-            path: String::from("path 1"),
-            duration: String::from("2:45")
-        },
-    ];
+fn startmpv(url: &str) -> Result<std::process::Child> {
+    let mpv = Command::new("mpv")
+        .arg("--input-file=-") // read commands
+        .arg("--idle") // keep running when theres nothing else
+        .arg("--no-terminal") // quiet
+        .arg("--no-video")
+        .arg("")
+        .arg(url)
+        .stdin(Stdio::piped())
+        .spawn()?;
 
+    Ok(mpv)
+}
+
+fn createtrack(url: &str) -> Result<Track> {
+    let (duration, artist, title) = ytdlp::getmetadata(url);
+
+    Ok(Track{title, artist, url: String::from(url), duration})
+}
+
+fn createplaylist(playlist: Vec<Track>) -> Vec<ListItem<'static>> {
     playlist
         .iter()
         .map(|track| {
@@ -117,7 +212,7 @@ fn playlistview(listitems: Vec<ListItem>) -> List {
 }
 
 fn playerview(app: &App, track: &Track, progress: u16, progressbarwidth: u16) -> (Block<'static>, Paragraph<'static>, Paragraph<'static>, LineGauge<'static>) {
-    let playpausetext = if app.trackpaused { "play" } else { "pause" };
+    let playpausetext = if app.playing { "pause" } else { "play" };
 
     let controls = format!(" [<<] [{}] [>>]", playpausetext);
 
@@ -150,7 +245,6 @@ fn run<B: Backend>(
     let mut lasttick = Instant::now();
     let progressbarwidth = 20;
     // hardcoded for now
-    let track = Track{title: String::from("track 1"), artist: String::from("artist 1"), path: String::from("path 1"), duration: String::from("2:45")};
     let progress = 0;
     
 
@@ -159,7 +253,10 @@ fn run<B: Backend>(
             // main window
             let area = f.area();
             let (toplayout, playerlayout, mainlayout) = createlayout(area, progressbarwidth);
-            let listitems: Vec<ListItem> = createplaylist();
+            
+            let track = Track{title: String::from("track 1"), artist: String::from("artist 1"), url: String::from("https://www.youtube.com/watch?v=eDshx6Rg9Hs"), duration: String::from("2:45")};
+            let playlist = vec![track.clone()];
+            let listitems: Vec<ListItem> = createplaylist(playlist);
             let list = playlistview(listitems);
 
             f.render_widget(list, toplayout[0]);
@@ -172,9 +269,11 @@ fn run<B: Backend>(
 
             let (playerblock, trackinfo, controlspara, progressbar) = 
                 playerview(&app, &track, progress, progressbarwidth);
-            f.render_widget(playerblock, mainlayout[1]);
+            
+            
+            f.render_widget(playerblock, playerlayout[0].union(playerlayout[1]).union(playerlayout[2]));
 
-            f.render_widget(controlspara, playerlayout[0].inner(Margin { vertical: 1, horizontal: 1 }));
+            f.render_widget(controlspara, playerlayout[0].inner(Margin {vertical: 1, horizontal: 1}));
             f.render_widget(trackinfo, playerlayout[1].inner(Margin {vertical: 1, horizontal: 1}));
             f.render_widget(progressbar, playerlayout[2].inner(Margin {vertical: 1, horizontal: 1}));
         })?;
