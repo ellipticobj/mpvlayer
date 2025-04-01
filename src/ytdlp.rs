@@ -68,12 +68,12 @@ pub fn getvidsfromplaylist(url: &str) -> Result<Vec<String>> {
     Ok(ids)
 }
 
-pub fn getmetadata(url: &str) -> (String, String, String) {
-    let duration = getduration(url).unwrap();
-    let title = gettitle(url).unwrap();
-    let artist = getartist(url).unwrap();
+pub fn getmetadata(url: &str) -> Result<(String, String, String), anyhow::Error> {
+    let duration = getduration(url)?;
+    let title = gettitle(url)?;
+    let artist = getartist(url)?;
 
-    (duration, title, artist)
+    Ok((duration, title, artist))
 }
 
 pub fn playlisturlfromid(id: String) -> String {
