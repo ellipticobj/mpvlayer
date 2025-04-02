@@ -30,7 +30,7 @@ pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
             .constraints([
                 Constraint::Length(21),         // controls
                 Constraint::Percentage(70),     // song name
-                Constraint::Min(10)             // progress bar
+                Constraint::Min(20)             // progress bar
             ])
             .split(bottomlayout);
     
@@ -50,7 +50,18 @@ fn getplaylistscont(app: &App) -> List {
     let playlistitems: Vec<ListItem> = app
         .playlists
         .iter()
-        .map(|p| ListItem::new(format!(" {}", p.name.as_str())))
+        .enumerate()
+        .map(|(i, p)| {
+            let style;
+
+            if i as u32 == app.currentlyselectedplaylistidx && app.currentlyselectedplaylist {
+                style = Style::default().bg(Color::Magenta).fg(Color::White);
+            } else {
+                style = Style::default();
+            };
+
+            ListItem::new(format!(" {}", p.name.as_str())).style(style)
+        })
         .collect();
 
     let playlistslist = List::new(playlistitems)
@@ -66,7 +77,16 @@ fn gettrackscont(app: &App) -> List {
         .playlists[app.currentplaylistidx as usize]
         .tracks
         .iter()
-        .map(|t| ListItem::new(format!(" {}", t.title.as_str())))
+        .enumerate()
+        .map(|(i, t)| {
+            let style;
+            if i as u32 == app.currentlyselectedtrackidx && !app.currentlyselectedplaylist {
+                style = Style::default().bg(Color::Magenta).fg(Color::White);
+            } else {
+                style = Style::default();
+            }
+            ListItem::new(format!(" {}", t.title.as_str())).style(style)
+        })
         .collect();
 
     let trackslist = List::new(trackitems)
