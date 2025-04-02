@@ -1,10 +1,10 @@
-use std::rc::Rc;
-
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     widgets::{Block, Borders},
     Frame,
 };
+
+use crate::consts::App;
 
 pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
     let verticalchunks = Layout::default()
@@ -48,19 +48,7 @@ pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
     
 }
 
-pub fn upperview(frame: &mut Frame, upperlayout: Rc<[Rect]>) {
-    frame.render_widget(Block::default().title(" playlists ").borders(Borders::ALL), upperlayout[0]);
-    frame.render_widget(Block::default().title(" tracks ").borders(Borders::ALL), upperlayout[1]);
-    frame.render_widget(Block::default().title(" queue ").borders(Borders::ALL), upperlayout[2]);
-}
-
-pub fn lowerview(frame: &mut Frame, lowerlayout: Rc<[Rect]>) {
-    frame.render_widget(Block::default().title(" controls ").borders(Borders::ALL), lowerlayout[0]);
-    frame.render_widget(Block::default().title(" song name ").borders(Borders::ALL), lowerlayout[1]);
-    frame.render_widget(Block::default().title(" progress bar ").borders(Borders::ALL), lowerlayout[2]);
-}
-
-pub fn drawmainview(frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect)) {
+pub fn drawmainview(app: &App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect)) {
     let (playlists, tracks, queue, controls, songinfo, progressbar) = areas;
     
     frame.render_widget(Block::default().title(" playlists ").borders(Borders::ALL), playlists);

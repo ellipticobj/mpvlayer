@@ -1,5 +1,5 @@
 use std::{
-    io, process::Child, 
+    io,
     time::Duration
 };
 
@@ -10,7 +10,6 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    widgets::{Block, Borders},
     Terminal,
 };
 // use tui_framework_experiment::{Button, ButtonState, ButtonTheme};
@@ -18,34 +17,14 @@ use anyhow::Result;
 
 mod ytdlp;
 mod constructors;
+mod consts;
 
-struct Track {
-    title: String,
-    artist: String,
-    duration: String,
-    url: String
-}
-
-struct Playlist {
-    name: String,
-    tracks: Vec<Track>
-}
-
-struct Queue {
-    tracks: Vec<Track>
-}
-
-struct App {
-    running: bool,
-    playing: bool,
-    playlists: Vec<Playlist>,
-    queue: Queue,
-    currentqueidx: u16,
-    currentplaylist: Playlist,
-    shuffle: bool,
-    repeat: bool,
-    mpv: Option<Child>
-}
+use consts::{
+    App,
+    Playlist,
+    Queue,
+    RepeatType
+};
 
 impl App {
     fn ontick(&mut self) -> Result<()> {
@@ -62,15 +41,48 @@ impl App {
         match key {
             KeyCode::Char('q') => self.running = false,
             KeyCode::Char(' ') => self.playing = !self.playing,
+            KeyCode::Char('l') => {
+                if !self.queue.queue.is_empty() {
+                    if self.currentqueueidx < self.queue.queue.len() as u16 {
+                        self.currentqueueidx += 1;
+                    } else {
+                        self.currentqueueidx = 0;
+                    }
+                }
+            },
+            KeyCode::Char('j') => {
+                if !self.queue.queue.is_empty() {                
+                    if self.currentqueueidx > 0 {
+                        self.currentqueueidx -= 1;
+                    } else {
+                        self.currentqueueidx = self.queue.queue.len() as u16 - 1;
+                    }
+                }
+            }
+            KeyCode::Char('s') => self.shuffle = !self.shuffle,
+            KeyCode::Char('o') => {
+                if self.repeat != RepeatType::One {
+                    self.repeat = RepeatType::One;
+                } else {
+                    self.repeat = RepeatType::None;
+                }
+            },
+            KeyCode::Char('a') => {
+                if self.repeat != RepeatType::All {
+                    self.repeat = RepeatType::All;
+                } else {
+                    self.repeat = RepeatType::None;
+                }
+            },
             _ => {}
         }
 
     }
 }
 
-fn draw(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, _app: &mut App) -> Result<()> {
+fn draw(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
     terminal.draw(|frame| {
-        constructors::drawmainview(frame, constructors::construct(frame.area()))
+        constructors::drawmainview(app, frame, constructors::construct(frame.area()))
     })?;
 
     Ok(())
@@ -89,11 +101,11 @@ fn main() -> Result<()> {
         running: true,
         playing: false,
         playlists: Vec::new(),
-        queue: Queue { tracks: Vec::new() },
-        currentqueidx: 0,
+        queue: Queue { queue: Vec::new() },
+        currentqueueidx: 0,
         currentplaylist: Playlist { name: String::new(), tracks: Vec::new() },
         shuffle: false,
-        repeat: false,
+        repeat: RepeatType::None,
         mpv: None // dont init mpv yet, only start when user starts playing music
     };
     
@@ -109,7 +121,7 @@ fn main() -> Result<()> {
             }
         }
 
-        app.ontick();
+        app.ontick()?;
     }
     
     // -- cleanup ---
