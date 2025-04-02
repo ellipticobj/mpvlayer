@@ -1,7 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    widgets::{Block, Borders},
-    Frame,
+    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Style}, widgets::{Block, Borders, List, ListDirection, ListItem}, Frame
 };
 
 use crate::consts::App;
@@ -48,11 +46,69 @@ pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
     
 }
 
-pub fn drawmainview(app: &App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect)) {
+fn getplaylistscont(app: &App) -> List {
+    let playlistitems: Vec<ListItem> = app
+        .playlists
+        .iter()
+        .map(|p| ListItem::new(format!(" {}", p.name.as_str())))
+        .collect();
+
+    let playlistslist = List::new(playlistitems)
+        .block(Block::default().borders(Borders::ALL).title(" playlists "))
+        .highlight_style(Style::default().fg(Color::Magenta))
+        .highlight_symbol("> ");
+
+    playlistslist
+}
+
+fn gettrackscont(app: &App) -> List {
+    let trackitems: Vec<ListItem> = app
+        .playlists[app.currentplaylistidx as usize]
+        .tracks
+        .iter()
+        .map(|t| ListItem::new(format!(" {}", t.title.as_str())))
+        .collect();
+
+    let trackslist = List::new(trackitems)
+        .block(Block::default().borders(Borders::ALL).title(" tracks "))
+        .highlight_style(Style::default().fg(Color::Magenta))
+        .highlight_symbol("> ");
+
+    trackslist
+}
+
+fn getcontrolscont(app: &App) -> List {
+    let controls: Vec<&str>;
+    if app.playing {
+        controls = vec!["<<", "pause", ">>"];
+    } else {
+        controls = vec!["<<", "play ", ">>"];
+    }
+
+    let controlslistitems = controls
+        .iter()
+        .map(|c| ListItem::new(format!("[{}]", c)));
+
+    let controlslist = List::new(controlslistitems)
+        .block(Block::default().borders(Borders::ALL))
+        .highlight_style(Style::default().fg(Color::Magenta))
+        .highlight_symbol("> ")
+        .direction(ListDirection::LeftToRight);
+
+    controlslist
+}
+
+pub fn rendermainview(app: &App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect)) {
     let (playlists, tracks, queue, controls, songinfo, progressbar) = areas;
-    
-    frame.render_widget(Block::default().title(" playlists ").borders(Borders::ALL), playlists);
-    frame.render_widget(Block::default().title(" tracks ").borders(Borders::ALL), tracks);
+
+    let playlistscont = getplaylistscont(app);
+    let trackscont = gettrackscont(app);
+    let controlscont = getcontrolscont(app);
+
+    frame.render_widget(playlistscont, playlists);
+    frame.render_widget(trackscont, tracks);
+    frame.render_widget(controlscont, controls);
+
     frame.render_widget(Block::default().title(" queue ").borders(Borders::ALL), queue);
     frame.render_widget(Block::default().title(" controls ").borders(Borders::ALL), controls);
     frame.render_widget(Block::default().title(" song info ").borders(Borders::ALL), songinfo);

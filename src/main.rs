@@ -1,6 +1,5 @@
 use std::{
-    io,
-    time::Duration
+    io, sync::atomic::AtomicUsize, time::Duration
 };
 
 use crossterm::{
@@ -22,6 +21,7 @@ mod consts;
 use consts::{
     App,
     Playlist,
+    Track,
     Queue,
     RepeatType
 };
@@ -39,11 +39,12 @@ impl App {
 
     fn onkey(&mut self, key: KeyCode) {
         match key {
+            // --- song control ---
             KeyCode::Char('q') => self.running = false,
             KeyCode::Char(' ') => self.playing = !self.playing,
             KeyCode::Char('l') => {
                 if !self.queue.queue.is_empty() {
-                    if self.currentqueueidx < self.queue.queue.len() as u16 {
+                    if self.currentqueueidx < self.queue.queue.len() as u32 {
                         self.currentqueueidx += 1;
                     } else {
                         self.currentqueueidx = 0;
@@ -55,7 +56,7 @@ impl App {
                     if self.currentqueueidx > 0 {
                         self.currentqueueidx -= 1;
                     } else {
-                        self.currentqueueidx = self.queue.queue.len() as u16 - 1;
+                        self.currentqueueidx = self.queue.queue.len() as u32 - 1;
                     }
                 }
             }
@@ -74,6 +75,53 @@ impl App {
                     self.repeat = RepeatType::None;
                 }
             },
+
+            // --- navigation ---
+            KeyCode::Up => {
+                if self.currentlyselectedplaylist {
+                    if !self.playlists.is_empty() {
+                        if self.currentlyselectedplaylistidx > 0 {
+                            self.currentlyselectedplaylistidx -= 1;
+                        } else {
+                            self.currentlyselectedplaylistidx = self.playlists.len() as u32 - 1;
+                        }
+                    }
+                } else {
+                    if !self.playlists.is_empty() && !self.playlists[self.currentlyselectedplaylistidx as usize].tracks.is_empty() {
+                        if self.currentlyselectedtrackidx > 0 {
+                            self.currentlyselectedtrackidx -= 1;
+                        } else {
+                            self.currentlyselectedtrackidx = self.playlists[self.currentlyselectedplaylistidx as usize].tracks.len() as u32 - 1;
+                        }
+                    }
+                }
+            },
+            KeyCode::Down => {
+                if self.currentlyselectedplaylist {
+                    if !self.playlists.is_empty() {
+                        if self.currentlyselectedplaylistidx < self.playlists.len() as u32 - 1 {
+                            self.currentlyselectedplaylistidx += 1;
+                        } else {
+                            self.currentlyselectedplaylistidx = 0;
+                        }
+                    }
+                } else {
+                    if !self.playlists.is_empty() && !self.playlists[self.currentlyselectedplaylistidx as usize].tracks.is_empty() {
+                        if self.currentlyselectedtrackidx < self.playlists[self.currentlyselectedplaylistidx as usize].tracks.len() as u32 - 1 {
+                            self.currentlyselectedtrackidx += 1;
+                        } else {
+                            self.currentlyselectedtrackidx = 0;
+                        }
+                    }
+                }
+            },
+            KeyCode::Left => {
+                self.currentlyselectedplaylist = true;
+            },
+            KeyCode::Right => {
+                self.currentlyselectedplaylist = false;
+            },
+            
             _ => {}
         }
 
@@ -82,7 +130,7 @@ impl App {
 
 fn draw(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
     terminal.draw(|frame| {
-        constructors::drawmainview(app, frame, constructors::construct(frame.area()))
+        constructors::rendermainview(app, frame, constructors::construct(frame.area()))
     })?;
 
     Ok(())
@@ -96,17 +144,40 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // fake playlists for now
+    let surfacebyaerochord = Track { 
+        title: String::from("surface"),
+        artist: String::from("aerochord"),
+        duration: String::from("4:15"),
+        url: String::from("https://www.youtube.com/watch?v=3FPwcaflCS8")
+    };
+
+    let dumdeedum = Track {
+        title: String::from("dum dee dum"),
+        artist: String::from("keys n' krates"),
+        duration: String::from("3:03"),
+        url: String::from("https://www.youtube.com/watch?v=eDshx6Rg9Hs")
+    };
+
+    let sigmaplaylist = Playlist {
+        name: String::from("sigma"),
+        tracks: vec![surfacebyaerochord, dumdeedum]
+    };
+
     // --- initialize app ---
     let mut app = App {
         running: true,
         playing: false,
-        playlists: Vec::new(),
+        playlists: vec![sigmaplaylist],
         queue: Queue { queue: Vec::new() },
         currentqueueidx: 0,
-        currentplaylist: Playlist { name: String::new(), tracks: Vec::new() },
+        currentplaylistidx: 0,
         shuffle: false,
         repeat: RepeatType::None,
-        mpv: None // dont init mpv yet, only start when user starts playing music
+        mpv: None, // dont init mpv yet, only start when user starts playing music
+        currentlyselectedplaylist: true,
+        currentlyselectedplaylistidx: 0,
+        currentlyselectedtrackidx: 0
     };
     
     // --- main loop ---

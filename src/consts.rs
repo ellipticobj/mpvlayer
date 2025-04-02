@@ -28,9 +28,12 @@ pub struct App {
     pub playing: bool,
     pub playlists: Vec<Playlist>,
     pub queue: Queue,
-    pub currentqueueidx: u16,
-    pub currentplaylist: Playlist,
+    pub currentqueueidx: u32,
+    pub currentplaylistidx: u32,
     pub shuffle: bool,
     pub repeat: RepeatType,
-    pub mpv: Option<Child>
+    pub mpv: Option<Child>,
+    pub currentlyselectedplaylistidx: u32,
+    pub currentlyselectedtrackidx: u32,
+    pub currentlyselectedplaylist: bool
 }
