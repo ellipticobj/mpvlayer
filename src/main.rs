@@ -1,5 +1,5 @@
 use std::{
-    io, sync::atomic::AtomicUsize, time::Duration
+    io, time::Duration
 };
 
 use crossterm::{
@@ -30,7 +30,7 @@ impl App {
     fn ontick(&mut self) -> Result<()> {
         if self.playing {
             if self.mpv.is_none() {
-                self.mpv = Some(std::process::Command::new("mpv").spawn()?);
+                self.mpv = Some(std::process::Command::new("mpv").arg("--no-terminal").spawn()?);
             }
         }
 

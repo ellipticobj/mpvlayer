@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Style}, widgets::{Block, Borders, List, ListDirection, ListItem}, Frame
+    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Style}, widgets::{Block, Borders, List, ListDirection, ListItem, Paragraph}, Frame
 };
 
 use crate::consts::App;
@@ -28,7 +28,7 @@ pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
     let bottomchunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(20),         // controls
+                Constraint::Length(21),         // controls
                 Constraint::Percentage(70),     // song name
                 Constraint::Min(10)             // progress bar
             ])
@@ -77,25 +77,18 @@ fn gettrackscont(app: &App) -> List {
     trackslist
 }
 
-fn getcontrolscont(app: &App) -> List {
-    let controls: Vec<&str>;
+fn getcontrolscont(app: &App) -> Paragraph {
+    let controls;
     if app.playing {
-        controls = vec!["<<", "pause", ">>"];
+        controls = "[<<] [ pause ] [>>]";
     } else {
-        controls = vec!["<<", "play ", ">>"];
+        controls = "[<<] [ play ] [>>]";
     }
 
-    let controlslistitems = controls
-        .iter()
-        .map(|c| ListItem::new(format!("[{}]", c)));
-
-    let controlslist = List::new(controlslistitems)
-        .block(Block::default().borders(Borders::ALL))
-        .highlight_style(Style::default().fg(Color::Magenta))
-        .highlight_symbol("> ")
-        .direction(ListDirection::LeftToRight);
-
-    controlslist
+    Paragraph::new(controls)
+        .block(Block::default().borders(Borders::ALL).title(" controls "))
+        .style(Style::default().fg(Color::Magenta))
+        .alignment(ratatui::layout::Alignment::Center)
 }
 
 pub fn rendermainview(app: &App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect)) {
