@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Style}, widgets::{Block, Borders, List, ListDirection, ListItem, Paragraph}, Frame
+    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Style}, widgets::{Block, Borders, List, ListItem, Paragraph}, Frame
 };
 
 use crate::consts::App;
@@ -45,53 +45,29 @@ pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
     (playlists, tracks, queue, controls, songname, progressbar)
     
 }
-
-fn getplaylistscont(app: &App) -> List {
-    let playlistitems: Vec<ListItem> = app
-        .playlists
+fn getplaylistscont(playlists: &Vec<crate::consts::Playlist>) -> List {
+    let playlistitems: Vec<ListItem> = playlists
         .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            let style;
-
-            if i as u32 == app.currentlyselectedplaylistidx && app.currentlyselectedplaylist {
-                style = Style::default().bg(Color::Magenta).fg(Color::White);
-            } else {
-                style = Style::default();
-            };
-
-            ListItem::new(format!(" {}", p.name.as_str())).style(style)
-        })
+        .map(|p| ListItem::new(format!(" {}", p.name.as_str())))
         .collect();
 
     let playlistslist = List::new(playlistitems)
         .block(Block::default().borders(Borders::ALL).title(" playlists "))
-        .highlight_style(Style::default().fg(Color::Magenta))
+        .highlight_style(Style::default().bg(Color::LightMagenta))
         .highlight_symbol("> ");
 
     playlistslist
 }
 
-fn gettrackscont(app: &App) -> List {
-    let trackitems: Vec<ListItem> = app
-        .playlists[app.currentplaylistidx as usize]
-        .tracks
+fn gettrackscont(tracks: &Vec<crate::consts::Track>) -> List {
+    let trackitems: Vec<ListItem> = tracks
         .iter()
-        .enumerate()
-        .map(|(i, t)| {
-            let style;
-            if i as u32 == app.currentlyselectedtrackidx && !app.currentlyselectedplaylist {
-                style = Style::default().bg(Color::Magenta).fg(Color::White);
-            } else {
-                style = Style::default();
-            }
-            ListItem::new(format!(" {}", t.title.as_str())).style(style)
-        })
+        .map(|t| ListItem::new(format!(" {}", t.title.as_str())))
         .collect();
 
     let trackslist = List::new(trackitems)
         .block(Block::default().borders(Borders::ALL).title(" tracks "))
-        .highlight_style(Style::default().fg(Color::Magenta))
+        .highlight_style(Style::default().bg(Color::LightMagenta))
         .highlight_symbol("> ");
 
     trackslist
@@ -111,15 +87,18 @@ fn getcontrolscont(app: &App) -> Paragraph {
         .alignment(ratatui::layout::Alignment::Center)
 }
 
-pub fn rendermainview(app: &App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect)) {
+
+
+pub fn rendermainview(app: &mut App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect)) {
     let (playlists, tracks, queue, controls, songinfo, progressbar) = areas;
 
-    let playlistscont = getplaylistscont(app);
-    let trackscont = gettrackscont(app);
-    let controlscont = getcontrolscont(app);
+    let playlistscont = getplaylistscont(&app.playlists);
+    let trackscont = gettrackscont(&app.playlists[app.currentlyselectedplaylistidx as usize].tracks);
+    
+    frame.render_stateful_widget(playlistscont, playlists, &mut app.playlistsstate);
+    frame.render_stateful_widget(trackscont, tracks, &mut app.tracksstate);
 
-    frame.render_widget(playlistscont, playlists);
-    frame.render_widget(trackscont, tracks);
+    let controlscont = getcontrolscont(app);
     frame.render_widget(controlscont, controls);
 
     frame.render_widget(Block::default().title(" queue ").borders(Borders::ALL), queue);

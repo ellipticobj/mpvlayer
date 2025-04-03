@@ -8,8 +8,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
+    backend::CrosstermBackend, widgets::ListState, Terminal
 };
 // use tui_framework_experiment::{Button, ButtonState, ButtonTheme};
 use anyhow::Result;
@@ -27,6 +26,31 @@ use consts::{
 };
 
 impl App {
+    fn new() -> App {
+        let mut playlistsstate = ListState::default();
+        playlistsstate.select(Some(0));
+
+        let mut tracksstate = ListState::default();
+        tracksstate.select(Some(0));
+
+        App {
+            running: true,
+            playing: false,
+            playlists: Vec::new(),
+            queue: Queue { queue: Vec::new() },
+            currentqueueidx: 0,
+            currentplaylistidx: 0,
+            shuffle: false,
+            repeat: RepeatType::None,
+            mpv: None,
+            currentlyselectedplaylist: true,
+            currentlyselectedplaylistidx: 0,
+            currentlyselectedtrackidx: 0,
+            playlistsstate,
+            tracksstate
+        }
+    }
+
     fn ontick(&mut self) -> Result<()> {
         if self.playing {
             if self.mpv.is_none() {
@@ -80,47 +104,86 @@ impl App {
             KeyCode::Up => {
                 if self.currentlyselectedplaylist {
                     if !self.playlists.is_empty() {
-                        if self.currentlyselectedplaylistidx > 0 {
-                            self.currentlyselectedplaylistidx -= 1;
-                        } else {
-                            self.currentlyselectedplaylistidx = self.playlists.len() as u32 - 1;
-                        }
+                        let i = match self.playlistsstate.selected() {
+                            Some(i) => {
+                                if i == 0 {
+                                    self.playlists.len() - 1
+                                } else {
+                                    i
+                                }
+                            }
+                            None => 0,
+                        };
+                        self.playlistsstate.select(Some(i));
+                        self.currentlyselectedplaylistidx = i as u32;
                     }
                 } else {
                     if !self.playlists.is_empty() && !self.playlists[self.currentlyselectedplaylistidx as usize].tracks.is_empty() {
-                        if self.currentlyselectedtrackidx > 0 {
-                            self.currentlyselectedtrackidx -= 1;
-                        } else {
-                            self.currentlyselectedtrackidx = self.playlists[self.currentlyselectedplaylistidx as usize].tracks.len() as u32 - 1;
-                        }
+                        let i = match self.tracksstate.selected() {
+                            Some(i) => {
+                                if i == 0 {
+                                    self.playlists[self.currentlyselectedplaylistidx as usize].tracks.len() - 1
+                                } else {
+                                    i
+                                }
+                            }
+                            None => 0,
+                        };
+                        self.tracksstate.select(Some(i));
                     }
                 }
             },
             KeyCode::Down => {
                 if self.currentlyselectedplaylist {
                     if !self.playlists.is_empty() {
-                        if self.currentlyselectedplaylistidx < self.playlists.len() as u32 - 1 {
-                            self.currentlyselectedplaylistidx += 1;
-                        } else {
-                            self.currentlyselectedplaylistidx = 0;
-                        }
+                        let i = match self.playlistsstate.selected() {
+                            Some(i) => {
+                                if i >= self.playlists.len() - 1 {
+                                    0
+                                } else {
+                                    i + 1
+                                }
+                            }
+                            None => 0,
+                        };
+                        self.playlistsstate.select(Some(i));
+                        self.currentlyselectedplaylistidx = i as u32;
                     }
                 } else {
                     if !self.playlists.is_empty() && !self.playlists[self.currentlyselectedplaylistidx as usize].tracks.is_empty() {
-                        if self.currentlyselectedtrackidx < self.playlists[self.currentlyselectedplaylistidx as usize].tracks.len() as u32 - 1 {
-                            self.currentlyselectedtrackidx += 1;
-                        } else {
-                            self.currentlyselectedtrackidx = 0;
-                        }
+                        let i = match self.tracksstate.selected() {
+                            Some(i) => {
+                                if i >= self.playlists[self.currentlyselectedplaylistidx as usize].tracks.len() - 1 {
+                                    0
+                                } else {
+                                    i + 1
+                                }
+                            }
+                            None => 0,
+                        };
+                        self.tracksstate.select(Some(i));
                     }
                 }
             },
             KeyCode::Left => {
                 self.currentlyselectedplaylist = true;
+                self.tracksstate.select(None);
+                self.playlistsstate.select(Some(self.currentlyselectedplaylistidx as usize));
             },
             KeyCode::Right => {
                 self.currentlyselectedplaylist = false;
+                self.playlistsstate.select(None);
+                self.tracksstate.select(Some(self.currentlyselectedtrackidx as usize));
             },
+            KeyCode::Enter => {
+                if self.currentlyselectedplaylist {
+                    self.currentplaylistidx = self.currentlyselectedplaylistidx;
+                    self.queue.queue = self.playlists[self.currentlyselectedplaylistidx as usize].tracks.clone();
+                } else {
+                    self.queue.queue.push(self.playlists[self.currentlyselectedplaylistidx as usize].tracks[self.currentlyselectedtrackidx as usize].clone());
+                }
+                self.currentqueueidx = 0;
+            }
             
             _ => {}
         }
@@ -159,16 +222,42 @@ fn main() -> Result<()> {
         url: String::from("https://www.youtube.com/watch?v=eDshx6Rg9Hs")
     };
 
+    let traproyalty = Track {
+        title: String::from("trap royalty"),
+        artist: String::from("very cool tutorials"),
+        duration: String::from("1:13"),
+        url: String::from("https://www.youtube.com/watch?v=zouSbflXfOo")
+    };
+
+    let goodbye = Track {
+        title: String::from("goodbye"),
+        artist: String::from("irokz"),
+        duration: String::from("4:00"),
+        url: String::from("https://www.youtube.com/watch?v=jJxJ8O_fMgg")
+    };
+
+    let glockinmyrawri = Track {
+        title: String::from("glock in my rawri"),
+        artist: String::from("randy!"),
+        duration: String::from("2:16"),
+        url: String::from("https://www.youtube.com/watch?v=lWiRuvoOdGc")
+    };
+
     let sigmaplaylist = Playlist {
         name: String::from("sigma"),
-        tracks: vec![surfacebyaerochord, dumdeedum]
+        tracks: vec![surfacebyaerochord.clone(), dumdeedum.clone()]
+    };
+
+    let sigmaplaylistcopy = Playlist {
+        name: String::from("sigma copy"),
+        tracks: vec![traproyalty.clone(), goodbye.clone(), glockinmyrawri.clone()]
     };
 
     // --- initialize app ---
     let mut app = App {
         running: true,
         playing: false,
-        playlists: vec![sigmaplaylist],
+        playlists: vec![sigmaplaylist.clone(), sigmaplaylistcopy.clone()],
         queue: Queue { queue: Vec::new() },
         currentqueueidx: 0,
         currentplaylistidx: 0,
@@ -177,8 +266,12 @@ fn main() -> Result<()> {
         mpv: None, // dont init mpv yet, only start when user starts playing music
         currentlyselectedplaylist: true,
         currentlyselectedplaylistidx: 0,
-        currentlyselectedtrackidx: 0
+        currentlyselectedtrackidx: 0,
+        playlistsstate: ListState::default(),
+        tracksstate: ListState::default()
     };
+    app.playlistsstate.select(Some(0));
+    app.tracksstate.select(None);
     
     // --- main loop ---
     while app.running {

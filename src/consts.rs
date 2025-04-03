@@ -1,5 +1,8 @@
 use std::process::Child;
 
+use ratatui::widgets::ListState;
+
+#[derive(PartialEq, Eq, Clone)]
 pub struct Track {
     pub title: String,
     pub artist: String,
@@ -7,6 +10,7 @@ pub struct Track {
     pub url: String
 }
 
+#[derive(PartialEq, Eq, Clone)]
 pub struct Playlist {
     pub name: String,
     pub tracks: Vec<Track>
@@ -35,5 +39,7 @@ pub struct App {
     pub mpv: Option<Child>,
     pub currentlyselectedplaylistidx: u32,
     pub currentlyselectedtrackidx: u32,
-    pub currentlyselectedplaylist: bool
+    pub currentlyselectedplaylist: bool,
+    pub playlistsstate: ListState,
+    pub tracksstate: ListState
 }
