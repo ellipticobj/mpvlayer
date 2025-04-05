@@ -16,6 +16,7 @@ pub struct Playlist {
     pub tracks: Vec<Track>
 }
 
+#[derive(PartialEq, Eq, Clone)]
 pub struct Queue {
     pub queue: Vec<Track>
 }
@@ -25,6 +26,13 @@ pub enum RepeatType {
     None,
     One,
     All
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum CurrentColumn {
+    Playlists,
+    Tracks,
+    Queue
 }
 
 pub struct App {
@@ -39,7 +47,8 @@ pub struct App {
     pub mpv: Option<Child>,
     pub currentlyselectedplaylistidx: u32,
     pub currentlyselectedtrackidx: u32,
-    pub currentlyselectedplaylist: bool,
+    pub currentlyselectedcolumn: CurrentColumn,
     pub playlistsstate: ListState,
-    pub tracksstate: ListState
+    pub tracksstate: ListState,
+    pub queuestate: ListState
 }

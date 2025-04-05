@@ -22,40 +22,14 @@ use consts::{
     Playlist,
     Track,
     Queue,
-    RepeatType
+    RepeatType,
+    CurrentColumn
 };
 
 impl App {
-    fn new() -> App {
-        let mut playlistsstate = ListState::default();
-        playlistsstate.select(Some(0));
-
-        let mut tracksstate = ListState::default();
-        tracksstate.select(Some(0));
-
-        App {
-            running: true,
-            playing: false,
-            playlists: Vec::new(),
-            queue: Queue { queue: Vec::new() },
-            currentqueueidx: 0,
-            currentplaylistidx: 0,
-            shuffle: false,
-            repeat: RepeatType::None,
-            mpv: None,
-            currentlyselectedplaylist: true,
-            currentlyselectedplaylistidx: 0,
-            currentlyselectedtrackidx: 0,
-            playlistsstate,
-            tracksstate
-        }
-    }
-
     fn ontick(&mut self) -> Result<()> {
         if self.playing {
-            if self.mpv.is_none() {
-                self.mpv = Some(std::process::Command::new("mpv").arg("--no-terminal").spawn()?);
-            }
+            self.playcurrenttrack()?;
         }
 
         Ok(())
@@ -67,22 +41,10 @@ impl App {
             KeyCode::Char('q') => self.running = false,
             KeyCode::Char(' ') => self.playing = !self.playing,
             KeyCode::Char('l') => {
-                if !self.queue.queue.is_empty() {
-                    if self.currentqueueidx < self.queue.queue.len() as u32 {
-                        self.currentqueueidx += 1;
-                    } else {
-                        self.currentqueueidx = 0;
-                    }
-                }
+                self.playnexttrack();
             },
             KeyCode::Char('j') => {
-                if !self.queue.queue.is_empty() {                
-                    if self.currentqueueidx > 0 {
-                        self.currentqueueidx -= 1;
-                    } else {
-                        self.currentqueueidx = self.queue.queue.len() as u32 - 1;
-                    }
-                }
+                self.playprevioustrack();
             }
             KeyCode::Char('s') => self.shuffle = !self.shuffle,
             KeyCode::Char('o') => {
@@ -102,92 +64,182 @@ impl App {
 
             // --- navigation ---
             KeyCode::Up => {
-                if self.currentlyselectedplaylist {
-                    if !self.playlists.is_empty() {
-                        let i = match self.playlistsstate.selected() {
-                            Some(i) => {
-                                if i == 0 {
-                                    self.playlists.len() - 1
-                                } else {
-                                    i
+                match self.currentlyselectedcolumn {
+                    CurrentColumn::Playlists => {
+                        let tracks = self.playlists.clone();
+                        if !tracks.is_empty() {
+                            let i = match self.playlistsstate.selected() {
+                                Some(i) => {
+                                    if i == 0 {
+                                        tracks.len() - 1
+                                    } else {
+                                        i - 1
+                                    }
                                 }
-                            }
-                            None => 0,
-                        };
-                        self.playlistsstate.select(Some(i));
-                        self.currentlyselectedplaylistidx = i as u32;
-                    }
-                } else {
-                    if !self.playlists.is_empty() && !self.playlists[self.currentlyselectedplaylistidx as usize].tracks.is_empty() {
-                        let i = match self.tracksstate.selected() {
-                            Some(i) => {
-                                if i == 0 {
-                                    self.playlists[self.currentlyselectedplaylistidx as usize].tracks.len() - 1
-                                } else {
-                                    i
+                                None => 0,
+                            };
+                            self.playlistsstate.select(Some(i));
+                            self.currentlyselectedplaylistidx = i as u32;
+                        }
+                    },
+                    CurrentColumn::Tracks => {
+                        let tracks = self.playlists.clone();
+                        if !tracks.is_empty() && !tracks[self.currentlyselectedplaylistidx as usize].tracks.is_empty() {
+                            let i = match self.tracksstate.selected() {
+                                Some(i) => {
+                                    if i == 0 {
+                                        tracks[self.currentlyselectedplaylistidx as usize].tracks.len() - 1
+                                    } else {
+                                        i - 1
+                                    }
                                 }
-                            }
-                            None => 0,
-                        };
-                        self.tracksstate.select(Some(i));
+                                None => 0,
+                            };
+                            self.tracksstate.select(Some(i));
+                        }
+                    },
+                    CurrentColumn::Queue => {
+
                     }
                 }
             },
             KeyCode::Down => {
-                if self.currentlyselectedplaylist {
-                    if !self.playlists.is_empty() {
-                        let i = match self.playlistsstate.selected() {
-                            Some(i) => {
-                                if i >= self.playlists.len() - 1 {
-                                    0
-                                } else {
-                                    i + 1
+                match self.currentlyselectedcolumn {
+                    CurrentColumn::Playlists => {
+                        // cycle through playlists
+                        let tracks = self.playlists.clone();
+                        if !tracks.is_empty() {
+                            let i = match self.playlistsstate.selected() {
+                                Some(i) => {
+                                    if i >= tracks.len() - 1 {
+                                        0
+                                    } else {
+                                        i + 1
+                                    }
                                 }
-                            }
-                            None => 0,
-                        };
-                        self.playlistsstate.select(Some(i));
-                        self.currentlyselectedplaylistidx = i as u32;
-                    }
-                } else {
-                    if !self.playlists.is_empty() && !self.playlists[self.currentlyselectedplaylistidx as usize].tracks.is_empty() {
-                        let i = match self.tracksstate.selected() {
-                            Some(i) => {
-                                if i >= self.playlists[self.currentlyselectedplaylistidx as usize].tracks.len() - 1 {
-                                    0
-                                } else {
-                                    i + 1
+                                None => 0,
+                            };
+                            self.playlistsstate.select(Some(i));
+                            self.currentlyselectedplaylistidx = i as u32;
+                        }
+                    },
+                    CurrentColumn::Tracks => {
+                        // cycle through tracks
+                        let tracks = self.playlists.clone();
+                        if !tracks.is_empty() && !tracks[self.currentlyselectedplaylistidx as usize].tracks.is_empty() {
+                            let i = match self.tracksstate.selected() {
+                                Some(i) => {
+                                    if i >= tracks[self.currentlyselectedplaylistidx as usize].tracks.len() - 1 {
+                                        0
+                                    } else {
+                                        i + 1
+                                    }
                                 }
-                            }
-                            None => 0,
-                        };
-                        self.tracksstate.select(Some(i));
+                                None => 0,
+                            };
+                            self.tracksstate.select(Some(i));
+                        }
+                    },
+                    CurrentColumn::Queue => {
+
                     }
                 }
             },
             KeyCode::Left => {
-                self.currentlyselectedplaylist = true;
+                match self.currentlyselectedcolumn {
+                    CurrentColumn::Playlists => {
+                        self.currentlyselectedcolumn = CurrentColumn::Queue;
+                    },
+                    CurrentColumn::Tracks => {
+                        self.currentlyselectedcolumn = CurrentColumn::Playlists;
+                    },
+                    CurrentColumn::Queue => {
+                        self.currentlyselectedcolumn = CurrentColumn::Queue;
+                    }
+                }
                 self.tracksstate.select(None);
                 self.playlistsstate.select(Some(self.currentlyselectedplaylistidx as usize));
             },
             KeyCode::Right => {
-                self.currentlyselectedplaylist = false;
+                match self.currentlyselectedcolumn {
+                    CurrentColumn::Playlists => {
+                        self.currentlyselectedcolumn = CurrentColumn::Tracks;
+                    },
+                    CurrentColumn::Tracks => {
+                        self.currentlyselectedcolumn = CurrentColumn::Queue;
+                    },
+                    CurrentColumn::Queue => {
+                        self.currentlyselectedcolumn = CurrentColumn::Playlists;
+                    }
+                }
                 self.playlistsstate.select(None);
                 self.tracksstate.select(Some(self.currentlyselectedtrackidx as usize));
             },
             KeyCode::Enter => {
-                if self.currentlyselectedplaylist {
-                    self.currentplaylistidx = self.currentlyselectedplaylistidx;
-                    self.queue.queue = self.playlists[self.currentlyselectedplaylistidx as usize].tracks.clone();
-                } else {
-                    self.queue.queue.push(self.playlists[self.currentlyselectedplaylistidx as usize].tracks[self.currentlyselectedtrackidx as usize].clone());
+                let playlist_idx = self.currentlyselectedplaylistidx as usize;
+                if !self.playlists.is_empty() && playlist_idx < self.playlists.len() {
+                    let tracks = &self.playlists[playlist_idx].tracks;
+                    if !tracks.is_empty() {
+                    let track_idx = self.currentlyselectedtrackidx as usize;
+                    if track_idx < tracks.len() {
+                        self.queue.queue = tracks[track_idx..].to_vec();
+                    }
+                    }
                 }
-                self.currentqueueidx = 0;
             }
             
             _ => {}
         }
 
+    }
+
+    fn playnexttrack(&mut self) -> Result<()> {
+        if self.queue.queue.is_empty() {
+            return Ok(());
+        }
+
+        match self.repeat {
+            RepeatType::None => {
+                if self.currentqueueidx < self.queue.queue.len() as u32 - 1 {
+                    self.currentqueueidx += 1;
+                    self.playcurrenttrack()?;
+                } else {
+                    self.currentqueueidx = 0;
+                    self.playing = false;
+                }
+            },
+            RepeatType::One => {
+                self.playcurrenttrack()?;
+            },
+            RepeatType::All => {
+                if self.currentqueueidx < self.queue.queue.len() as u32 - 1 {
+                    self.currentqueueidx += 1;
+                } else {
+                    self.currentqueueidx = 0;
+                }
+                self.playcurrenttrack()?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn playprevioustrack(&mut self) -> Result<()> {
+        if self.queue.queue.is_empty() {
+            return Ok(());
+        }
+
+        if self.currentqueueidx > 0 {
+            self.currentqueueidx -= 1;
+        } 
+
+        self.playcurrenttrack()?;
+        Ok(())
+    }
+
+    fn playcurrenttrack(&mut self) -> Result<()> {
+        // TODO: play the current track
+        Ok(())
     }
 }
 
@@ -264,14 +316,16 @@ fn main() -> Result<()> {
         shuffle: false,
         repeat: RepeatType::None,
         mpv: None, // dont init mpv yet, only start when user starts playing music
-        currentlyselectedplaylist: true,
+        currentlyselectedcolumn: CurrentColumn::Playlists,
         currentlyselectedplaylistidx: 0,
         currentlyselectedtrackidx: 0,
         playlistsstate: ListState::default(),
-        tracksstate: ListState::default()
+        tracksstate: ListState::default(),
+        queuestate: ListState::default()
     };
     app.playlistsstate.select(Some(0));
     app.tracksstate.select(None);
+    app.queuestate.select(None);
     
     // --- main loop ---
     while app.running {
