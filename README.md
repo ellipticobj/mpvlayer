@@ -10,6 +10,9 @@ mpv
 
 just use the latest version cmon
 
+## screenshots
+![ui](assets/ui.png)
+
 ## progress
 - [x] ui
 - [x] playing
