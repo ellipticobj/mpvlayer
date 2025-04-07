@@ -1,7 +1,8 @@
 use std::{
-    io, process::{Command, Stdio}, time::Duration
+    io::{self, WriterPanicked}, process::{Command, Stdio}, time::Duration, usize
 };
 
+use backend::playlisturlfromid;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
@@ -65,12 +66,15 @@ impl App {
                 self.currentdurationsecs += 1;
             }
         } else {
-            if self.currentdurationsecs > self.queue.queue[self.currentqueueidx as usize].duration {
-                self.currentdurationsecs = 0;
-                self.playnexttrack()?;
+            let queueidx = self.currentqueueidx as usize;
+            let queuevec = &self.queue.queue;
+            if queuevec.len() > queueidx {
+                if self.currentdurationsecs > queuevec[queueidx].duration {
+                    self.currentdurationsecs = 0;
+                    self.playnexttrack()?;
+                }
             }
         }
-
         Ok(())
     }
 
@@ -352,7 +356,22 @@ impl App {
     }
 
     fn pause(&mut self) -> Result<()> {
-        self.playing = !self.playing;
+        let (mpvrunning, pid) = match backend::getmpvpid() {
+            Ok(pid) => (true, pid),
+            Err(_) => (false, String::new()),
+        };
+
+        if mpvrunning {
+            if self.playing {
+                backend::pause(pid)?;
+                self.playing = false;
+            } else {
+                backend::unpause(pid)?;
+                self.playing = true;
+            }
+        } else {
+            self.playing = false;
+        }
 
         Ok(())
     }
