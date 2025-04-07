@@ -1,5 +1,5 @@
 use std::{
-    io, process::{Command, Stdio}, time::{Duration, Instant}
+    io, process::{Command, Stdio}, time::Duration
 };
 
 use crossterm::{
@@ -13,7 +13,7 @@ use ratatui::{
 // use tui_framework_experiment::{Button, ButtonState, ButtonTheme};
 use anyhow::Result;
 
-mod ytdlp;
+mod backend;
 mod constructors;
 mod consts;
 
@@ -65,7 +65,10 @@ impl App {
                 self.currentdurationsecs += 1;
             }
         } else {
-            self.playnexttrack()?;
+            if self.currentdurationsecs > self.queue.queue[self.currentqueueidx as usize].duration {
+                self.currentdurationsecs = 0;
+                self.playnexttrack()?;
+            }
         }
 
         Ok(())

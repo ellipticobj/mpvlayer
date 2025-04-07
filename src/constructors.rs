@@ -1,16 +1,29 @@
-use std::time::Duration;
-
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
-    Frame,
-    text::Span
+    Frame
 };
 
-use crate::consts::{App, Queue, Track};
+use crate::consts::{App, Queue};
 
+/// main constructor
+/// 
+/// # arguments
+/// * 'area' - the area to split up into individual areas
+/// 
+/// # returns
+/// * a tuple of six rects:
+///     * playlists
+///     * tracks
+///     * queue
+///     * controls
+///     * songinfo
+///     * progressbar
 pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
+    let controlslength = 21;
+    let songinfopercent = 70;
+
     let verticalchunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -34,9 +47,9 @@ pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
     let bottomchunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(21),         // controls
-                Constraint::Percentage(70),     // song name
-                Constraint::Min(20)             // progress bar
+                Constraint::Length(controlslength),         // controls
+                Constraint::Percentage(songinfopercent),    // song name
+                Constraint::Min(20)                         // progress bar
             ])
             .split(bottomlayout);
 
@@ -52,7 +65,7 @@ pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
 
 }
 fn getplaylistscont(playlists: &Vec<crate::consts::Playlist>) -> List {
-    /// gets the list of playlists
+    // gets the list of playlists
     let playlistitems: Vec<ListItem> = playlists
         .iter()
         .map(|p| ListItem::new(format!(" {}", p.name.as_str())))
@@ -67,7 +80,7 @@ fn getplaylistscont(playlists: &Vec<crate::consts::Playlist>) -> List {
 }
 
 fn gettrackscont(tracks: &Vec<crate::consts::Track>) -> List {
-    /// gets the list of tracks
+    // gets the list of tracks
     let trackitems: Vec<ListItem> = tracks
         .iter()
         .map(|t| ListItem::new(format!(" {} - {}", t.title.as_str(), t.artist.as_str())))
@@ -82,7 +95,7 @@ fn gettrackscont(tracks: &Vec<crate::consts::Track>) -> List {
 }
 
 fn getcontrolscont(app: &App) -> Paragraph {
-    /// gets controls
+    // gets controls
     let controls;
     if app.playing {
         controls = "[<<] [ pause ] [>>]";
@@ -97,7 +110,7 @@ fn getcontrolscont(app: &App) -> Paragraph {
 }
 
 fn getqueuecont(queue: &Queue) -> List<'static> {
-    /// gets the play queue
+    // gets the play queue
     let queueitems: Vec<ListItem> = queue
         .queue
         .iter()
@@ -113,7 +126,7 @@ fn getqueuecont(queue: &Queue) -> List<'static> {
 }
 
 fn getcontrolsstate(shuffle: bool, repeat: crate::consts::RepeatType) -> String {
-    /// gets the state of shuffle and repeat 
+    // gets the state of shuffle and repeat 
     let mut controls: Vec<String> = Vec::new();
     if shuffle {
         controls.push(String::from("shuffle on ─")); // extra dash so the text stays still call me a sigma
@@ -131,7 +144,7 @@ fn getcontrolsstate(shuffle: bool, repeat: crate::consts::RepeatType) -> String 
 }
 
 fn getsonginfocont(queue: &Queue, currentqueueidx: u32, shuffle: bool, repeat: crate::consts::RepeatType) -> Paragraph<'static> {
-    /// gets currently playing song
+    // gets currently playing song
     let displaytext: String;
 
     // --- check if the index points to a valid track ---
@@ -167,7 +180,7 @@ fn getsonginfocont(queue: &Queue, currentqueueidx: u32, shuffle: bool, repeat: c
 }
 
 fn getprettyduration(secs: u32) -> String {
-    /// changes duration from seconds to m:ss
+    // changes duration from seconds to m:ss
     let minutes = secs / 60;
     let seconds = secs % 60;
 
@@ -175,7 +188,7 @@ fn getprettyduration(secs: u32) -> String {
 }
 
 fn getprogressbar(currentprogresssecs: u32, totalsecs: u32) -> Gauge<'static> {
-    /// gets the progressbar 
+    // gets the progressbar 
     let currentprogress: String = getprettyduration(currentprogresssecs);
     let totalprogress: String = getprettyduration(totalsecs);
     let currentprogressratio;
@@ -193,8 +206,16 @@ fn getprogressbar(currentprogresssecs: u32, totalsecs: u32) -> Gauge<'static> {
         .ratio(currentprogressratio)
 }
 
+/// renders the main view
+/// 
+/// # arguments
+/// * `app` - mutable reference to the app state
+/// * `frame` - mutable reference to the frame to render on
+/// * `areas` - tuple of rectangular areas for different UI components
+/// 
+/// # returns
+/// * nothing
 pub fn rendermainview(app: &mut App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect)) {
-    /// render everything
     let (playlists, tracks, queue, controls, songinfo, progressbar) = areas;
 
     let playlistscont = getplaylistscont(&app.playlists);
