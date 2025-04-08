@@ -1,5 +1,5 @@
 use std::{
-    io::{self, prelude::*}, os::unix::net::UnixStream, process::{Command, Stdio}, time::Duration, usize
+    io, process::{Command, Stdio}, time::Duration, usize
 };
 
 use crossterm::{
@@ -7,6 +7,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use rand::{rng, seq::SliceRandom};
 use ratatui::{
     backend::CrosstermBackend, widgets::ListState, Terminal
 };
@@ -21,12 +22,12 @@ use consts::{
     App,
     Playlist,
     Track,
-    Queue,
     RepeatType,
     CurrentColumn
 };
 
 static MPVSOCKET: &str = "/tmp/mpvsocket";
+static MAXQUEUELENGTH: usize = 50;
 
 impl App {
     fn getnextidx(currentopt: Option<usize>, listlen: usize) -> usize {
@@ -71,20 +72,22 @@ impl App {
     }
 
     fn ontick(&mut self, counter: &u8) -> Result<()> {
-        if self.playing {
-            if counter == &3 {
-                self.currentdurationsecs += 1;
-            }
+        if counter == &3 { // every second
+            if self.playing {self.currentdurationsecs += 1;} // add 1 seconds if playing
+
         } else {
-            let queueidx = self.currentqueueidx as usize;
-            let queuevec = &self.queue.queue;
-            if queuevec.len() > queueidx {
-                if self.currentdurationsecs > queuevec[queueidx].duration {
-                    self.currentdurationsecs = 0;
-                    self.playnexttrack()?;
+            if !self.playing {
+                let queueidx = self.currentqueueidx as usize;
+                let queuevec = &self.queue;
+                if queuevec.len() > queueidx {
+                    if self.currentdurationsecs > queuevec[queueidx].duration {
+                        self.currentdurationsecs = 0;
+                        self.playnexttrack()?;
+                    }
                 }
             }
         }
+
         Ok(())
     }
 
@@ -93,30 +96,30 @@ impl App {
             // --- controls ---
             KeyCode::Char('q') => self.running = false,
             KeyCode::Char(' ') => self.pause()?,
-            KeyCode::Char('l') => { // next track in queue
-                
+            KeyCode::Char('>') => { // next track in queue
+                self.playnexttrack()?
             }
-            KeyCode::Char('j') => { // previous track in queue
-                
+            KeyCode::Char('<') => { // previous track in queue
+                self.playprevtrack()?
             }
-            KeyCode::Char('s') => self.shuffle = !self.shuffle, // toggle shuffle
-            KeyCode::Char('r') => { // cycle repeat one/none/all
-                match self.repeat {
-                    RepeatType::None => {
-                        self.repeat = RepeatType::All;
-                    },
-                    RepeatType::All => {
-                        self.repeat = RepeatType::One;
-                    },
-                    RepeatType::One => {
-                        self.repeat = RepeatType::None;
-                    }
+            KeyCode::Char('s') => {
+                self.shuffle = !self.shuffle;
+                if !self.queue.is_empty() {
+                    self.shufflequeue()?;
                 }
+            }, // toggle shuffle
+            KeyCode::Char('r') => { // cycle repeat none/all/one
+                match self.repeat {
+                    RepeatType::None => self.repeat = RepeatType::All,
+                    RepeatType::All => self.repeat = RepeatType::One,
+                    RepeatType::One => self.repeat = RepeatType::None
+                }
+                self.repeatqueue()?;
             }
 
             // --- navigation ---
-            KeyCode::Up | KeyCode::Down => {
-                let isup = key == KeyCode::Up;
+            KeyCode::Up | KeyCode::Down | KeyCode::Char('k') | KeyCode::Char('j') => {
+                let isup = key == KeyCode::Up || key == KeyCode::Char('k');
                 match self.currentlyselectedcolumn {
                     CurrentColumn::Playlists => {
                         let playlists = &self.playlists;
@@ -152,7 +155,7 @@ impl App {
                         }
                     }
                     CurrentColumn::Queue => {
-                        let tracks = &self.queue.queue;
+                        let tracks = &self.queue;
                         let queuestate = &self.queuestate;
                         if !tracks.is_empty() {
                             let currentselection = queuestate.selected();
@@ -166,7 +169,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Left | KeyCode::Right => {
+            KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
                 let isleft = key == KeyCode::Left;
 
                 // deselect current column's state
@@ -202,9 +205,9 @@ impl App {
                         }
                     }
                     CurrentColumn::Queue => {
-                        if !self.queue.queue.is_empty() {
+                        if !self.queue.is_empty() {
                             // select current playing index or default to 0
-                            let idxtoselect = std::cmp::min(self.currentqueueidx as usize, self.queue.queue.len() - 1);
+                            let idxtoselect = std::cmp::min(self.currentqueueidx as usize, self.queue.len() - 1);
                             self.queuestate.select(Some(idxtoselect));
                         }
                     }
@@ -217,7 +220,7 @@ impl App {
                         if let Some(selectedidx) = self.playlistsstate.selected() {
                             if selectedidx < self.playlists.len() {
                                 self.currentplaylistidx = selectedidx as u32; // update context
-                                self.queue.queue = self.playlists[selectedidx].tracks.clone();
+                                self.queue = self.playlists[selectedidx].tracks.clone();
                                 self.currentqueueidx = 0; // start from beginning
                                 self.queuestate.select(Some(0));
                                 self.playing = true;
@@ -235,7 +238,7 @@ impl App {
                                 if selectedtrackidx < tracks.len() {
                                     self.currentplaylistidx = playlistidx as u32; // update context
                                     // set queue starting from selected track
-                                    self.queue.queue = tracks[selectedtrackidx..].to_vec();
+                                    self.queue = tracks[selectedtrackidx..].to_vec();
                                     self.currentqueueidx = 0; // start from beginning of new queue
                                     self.queuestate.select(Some(0));
                                     self.playing = true;
@@ -248,7 +251,7 @@ impl App {
                         // use selected index from state
                         if let Some(selectedidx) = self.queuestate.selected() {
                             // check queue index validity
-                            if selectedidx < self.queue.queue.len() {
+                            if selectedidx < self.queue.len() {
                                 self.currentqueueidx = selectedidx as u32; // jump to selected track
                                 self.playing = true;
                                 self.playcurrenttrack()?;
@@ -256,6 +259,8 @@ impl App {
                         }
                     }
                 }
+                self.repeatqueue()?;
+                self.shufflequeue()?;
             }
             _ => {}
         }
@@ -266,7 +271,7 @@ impl App {
         // --- safety checks ---
         let trackidx = self.currentqueueidx as usize;
 
-        if self.queue.queue.is_empty() || trackidx >= self.queue.queue.len() {
+        if self.queue.is_empty() || trackidx >= self.queue.len() {
             // if there is nothing to play
             self.playing = false;
             self.currentdurationsecs = 0;
@@ -288,13 +293,13 @@ impl App {
         }
     
         // --- get url ---
-        let trackurl = &self.queue.queue[trackidx].url;
-        let tracktitle = &self.queue.queue[trackidx].title;
+        let trackurl = &self.queue[trackidx].url;
+        // let tracktitle = &self.queue[trackidx].title;
     
         // --- reset progress timer ---
         self.currentdurationsecs = 0;
     
-        println!("attempting to play: '{}' from {}", tracktitle, trackurl); // debug print
+        // println!("attempting to play: '{}' from {}", tracktitle, trackurl); // debug print
         let childproc = Command::new("mpv")
             .arg("--no-video")
             .arg("--no-terminal")
@@ -316,28 +321,14 @@ impl App {
     }
 
     fn playnexttrack(&mut self) -> Result<()> {
-        if self.queue.queue.is_empty() {
+        if self.queue.is_empty() {
             return Ok(());
         }
-        let nextidx = match self.repeat {
-            RepeatType::None => {
-                if self.currentqueueidx >= self.queue.queue.len() as u32 - 1 {
-                    // no more songs to play
-                    self.playing = false;
-                    self.currentdurationsecs = 0;
-                    return Ok(());
-                } else {
-                    self.currentqueueidx + 1
-                }
-            },
-            RepeatType::One => self.currentqueueidx,
-            RepeatType::All =>  {
-                if self.currentqueueidx >= self.queue.queue.len() as u32 - 1 {
-                    0
-                } else {
-                    self.currentqueueidx + 1
-                }
-            }
+
+        let nextidx = if self.currentqueueidx == self.queue.len() as u32 - 1 {
+            0
+        } else {
+            self.currentqueueidx + 1
         };
 
         self.currentqueueidx = nextidx;
@@ -348,11 +339,11 @@ impl App {
     }
 
     fn playprevtrack(&mut self) -> Result<()> {
-        if self.queue.queue.is_empty() {
+        if self.queue.is_empty() {
             return Ok(());
         }
         let previdx = if self.currentqueueidx == 0 {
-            self.queue.queue.len() as u32 - 1   
+            self.queue.len() as u32 - 1   
         } else {
             self.currentqueueidx - 1
         };
@@ -365,16 +356,78 @@ impl App {
     }
 
     fn shufflequeue(&mut self) -> Result<()> {
+        if !self.queue.is_empty() {
+            if self.shuffle {
+                self.queuebeforeshuffle = Some(self.queue.clone());
+                let mut rng = rng();
+                self.queue.shuffle(&mut rng);
+                self.currentqueueidx = 0;
+                self.currentdurationsecs = 0;
+                self.queuestate.select(Some(0));
+            } else {
+                if !self.queuebeforeshuffle.is_none() {
+                    self.queue = self.queuebeforeshuffle.clone().unwrap();
+                } else {
+                    self.queue = self.playlists[self.currentplaylistidx as usize].clone().tracks;
+                }
+                self.queuebeforeshuffle = None;
+                self.currentqueueidx = 0;
+                self.currentdurationsecs = 0;
+                self.queuestate.select(Some(0));
+            }
+        }
+
         Ok(())
     }
 
     fn repeatqueue(&mut self) -> Result<()> {
+        if !self.queue.is_empty() {
+            match self.repeat {
+                RepeatType::None => {
+                    // if queue is not at max length, repeat current queue until it reaches MAXQUEUELENGTH
+                    if self.queue.len() < MAXQUEUELENGTH {
+                        let originallen = self.queue.len();
+                        while self.queue.len() < MAXQUEUELENGTH {
+                            let remainingspace = MAXQUEUELENGTH - self.queue.len();
+                            // chunks to add is the minimum of the remaining space and the original length
+                            let chunkstoadd = std::cmp::min(originallen, remainingspace);
+                            // append the extension to the queue
+                            let mut extension: Vec<Track> = self.queue[0..chunkstoadd].to_vec();
+                            self.queue.append(&mut extension);
+                        }
+                    }
+                },
+                RepeatType::All => {
+                    // store current queue for later
+                    self.queuebeforerepeat = Some(self.queue.clone());
+                    // get current song
+                    let currentsong = self.queue[self.currentqueueidx as usize].clone();
+                    // repeat current song MAXQUEUELENGTH times
+                    self.queue = vec![currentsong; MAXQUEUELENGTH as usize];
+                },
+                RepeatType::One => {
+                    // for no repeat, we need to ensure the queue is in its original state
+                    if let Some(ref original) = self.queuebeforerepeat {
+                        self.queue = original.clone();
+                    } else {
+                        // if no original queue exists, use the current playlist
+                        let playlistidx = self.currentplaylistidx as usize;
+                        if playlistidx < self.playlists.len() {
+                            self.queue = self.playlists[playlistidx].tracks.clone();
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
     fn pause(&mut self) -> Result<()> {
-        backend::pause(MPVSOCKET)?;
-        self.playing = !self.playing;
+        if self.playing {
+            backend::pause(MPVSOCKET)?;
+            self.playing = !self.playing;
+        }
         Ok(())
     }
 }
@@ -445,8 +498,11 @@ fn main() -> Result<()> {
     let mut app = App {
         running: true,
         playing: false,
+        version: String::from("0.0.1"),
         playlists: vec![sigmaplaylist.clone(), sigmaplaylistcopy.clone()],
-        queue: Queue { queue: Vec::new() },
+        queue: Vec::new(),
+        queuebeforeshuffle: None,
+        queuebeforerepeat: None,
         currentqueueidx: 0,
         currentplaylistidx: 0,
         currentdurationsecs: 0,

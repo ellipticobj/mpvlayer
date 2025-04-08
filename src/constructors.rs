@@ -1,11 +1,8 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
-    Frame
+    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Style}, text::Line, widgets::{Block, Borders, Gauge, List, ListItem, Paragraph}, Frame
 };
 
-use crate::consts::{App, Queue};
+use crate::consts::{App, Track};
 
 static CONTROLSLENGTH: u16 = 21;
 static SONGINFOPERCENT: u16 = 70;
@@ -23,12 +20,13 @@ static SONGINFOPERCENT: u16 = 70;
 ///     * controls
 ///     * songinfo
 ///     * progressbar
-pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
+pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect, Rect) {
     let verticalchunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(100),
-                Constraint::Min(3)
+                Constraint::Percentage(100),// tracks views
+                Constraint::Min(3),         // controls/info
+                Constraint::Length(1)       // credits
             ])
             .split(area);
 
@@ -61,7 +59,9 @@ pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
     let songname = bottomchunks[1];
     let progressbar = bottomchunks[2];
 
-    (playlists, tracks, queue, controls, songname, progressbar)
+    let credits = verticalchunks[2];
+
+    (playlists, tracks, queue, controls, songname, progressbar, credits)
 
 }
 fn getplaylistscont(playlists: &Vec<crate::consts::Playlist>) -> List {
@@ -109,10 +109,9 @@ fn getcontrolscont(app: &App) -> Paragraph {
         .alignment(ratatui::layout::Alignment::Center)
 }
 
-fn getqueuecont(queue: &Queue) -> List<'static> {
+fn getqueuecont(queue: &Vec<Track>) -> List<'static> {
     // gets the play queue
     let queueitems: Vec<ListItem> = queue
-        .queue
         .iter()
         .map(|t| ListItem::new(format!(" {}", t.title.as_str())))
         .collect();
@@ -143,15 +142,15 @@ fn getcontrolsstate(shuffle: bool, repeat: crate::consts::RepeatType) -> String 
     controls.join("──")
 }
 
-fn getsonginfocont(queue: &Queue, currentqueueidx: u32, shuffle: bool, repeat: crate::consts::RepeatType) -> Paragraph<'static> {
+fn getsonginfocont(queue: &Vec<Track>, currentqueueidx: u32, shuffle: bool, repeat: crate::consts::RepeatType) -> Paragraph<'static> {
     // gets currently playing song
     let displaytext: String;
 
     // --- check if the index points to a valid track ---
-    let track_idx = currentqueueidx as usize;
-    if !queue.queue.is_empty() && track_idx < queue.queue.len() {
+    let trackidx = currentqueueidx as usize;
+    if !queue.is_empty() && trackidx < queue.len() {
         // --- valid track ---
-        let currenttrack = &queue.queue[track_idx];
+        let currenttrack = &queue[trackidx];
 
         displaytext = if !currenttrack.artist.is_empty() {
             format!(" {} - {}", currenttrack.artist, currenttrack.title)
@@ -206,6 +205,14 @@ fn getprogressbar(currentprogresssecs: u32, totalsecs: u32) -> Gauge<'static> {
         .ratio(currentprogressratio)
 }
 
+fn getcreditscont(version: &str) -> Block<'static> {
+    // gets the credits
+    Block::new()
+        .title_top(format!("mpvlayer ── v{} ", version))
+        .title_top(Line::from(" complain at https://github.com/ellipticobj/mpvlayer").right_aligned())
+        .borders(Borders::TOP)
+}
+
 /// renders the main view
 /// 
 /// # arguments
@@ -215,8 +222,8 @@ fn getprogressbar(currentprogresssecs: u32, totalsecs: u32) -> Gauge<'static> {
 /// 
 /// # returns
 /// * nothing
-pub fn rendermainview(app: &mut App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect)) {
-    let (playlists, tracks, queue, controls, songinfo, progressbar) = areas;
+pub fn rendermainview(app: &mut App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect, Rect)) {
+    let (playlists, tracks, queue, controls, songinfo, progressbar, credits) = areas;
 
     let playlistscont = getplaylistscont(&app.playlists);
     frame.render_stateful_widget(playlistscont, playlists, &mut app.playlistsstate);
@@ -234,9 +241,13 @@ pub fn rendermainview(app: &mut App, frame: &mut Frame, areas: (Rect, Rect, Rect
     let songinfocont = getsonginfocont(&app.queue, app.currentqueueidx, app.shuffle, app.repeat);
     frame.render_widget(songinfocont, songinfo);
 
+    let creditscont = getcreditscont(&app.version);
+    frame.render_widget(creditscont, credits);
+
     let progressbarcont;
-    if !app.queue.queue.is_empty() && (app.currentqueueidx as usize) < app.queue.queue.len() && app.currentdurationsecs <= app.queue.queue[app.currentqueueidx as usize].duration {
-        progressbarcont = getprogressbar(app.currentdurationsecs, app.queue.queue[app.currentqueueidx as usize].duration);
+    // if queue is not empty and current index is valid and current duration is valid
+    if !app.queue.is_empty() && (app.currentqueueidx as usize) < app.queue.len() && app.currentdurationsecs <= app.queue[app.currentqueueidx as usize].duration {
+        progressbarcont = getprogressbar(app.currentdurationsecs, app.queue[app.currentqueueidx as usize].duration);
     } else {
         progressbarcont = getprogressbar(0, 0);
     }
