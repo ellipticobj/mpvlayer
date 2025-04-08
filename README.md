@@ -18,8 +18,8 @@ pidof
 
 ## progress
 - [x] ui
-- [x] playing
-- [ ] pausing
+- [x] play/pause
+- [ ] queue
 - [ ] repeat
 - [ ] shuffle
 - [ ] edit library
