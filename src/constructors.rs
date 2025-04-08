@@ -7,6 +7,9 @@ use ratatui::{
 
 use crate::consts::{App, Queue};
 
+static CONTROLSLENGTH: u16 = 21;
+static SONGINFOPERCENT: u16 = 70;
+
 /// main constructor
 /// 
 /// # arguments
@@ -21,9 +24,6 @@ use crate::consts::{App, Queue};
 ///     * songinfo
 ///     * progressbar
 pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
-    let controlslength = 21;
-    let songinfopercent = 70;
-
     let verticalchunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -47,8 +47,8 @@ pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
     let bottomchunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(controlslength),         // controls
-                Constraint::Percentage(songinfopercent),    // song name
+                Constraint::Length(CONTROLSLENGTH),         // controls
+                Constraint::Percentage(SONGINFOPERCENT),    // song name
                 Constraint::Min(20)                         // progress bar
             ])
             .split(bottomlayout);

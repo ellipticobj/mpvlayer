@@ -1,8 +1,7 @@
 use std::{
-    io::{self, WriterPanicked}, process::{Command, Stdio}, time::Duration, usize
+    io::{self, prelude::*}, os::unix::net::UnixStream, process::{Command, Stdio}, time::Duration, usize
 };
 
-use backend::playlisturlfromid;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
@@ -26,6 +25,8 @@ use consts::{
     RepeatType,
     CurrentColumn
 };
+
+static MPVSOCKET: &str = "/tmp/mpvsocket";
 
 impl App {
     fn getnextidx(currentopt: Option<usize>, listlen: usize) -> usize {
@@ -58,6 +59,15 @@ impl App {
             }
             None => listlen - 1, // if nothing selected, select the last item
         }
+    }
+
+    fn firstrun(&mut self) -> Result<()> {
+        self.playlistsstate.select(Some(0));
+        self.tracksstate.select(None);
+        self.queuestate.select(None);
+        backend::killallmpv();
+
+        Ok(())
     }
 
     fn ontick(&mut self, counter: &u8) -> Result<()> {
@@ -288,6 +298,9 @@ impl App {
         let childproc = Command::new("mpv")
             .arg("--no-video")
             .arg("--no-terminal")
+            .arg(format!("--input-ipc-server={}", MPVSOCKET))
+            .arg("--pause=no")
+            .arg("--keep-open=yes")
             // .arg("--no-audio-display")? .arg("--vo=null")? // audio-only if needed 
             // .arg("--really-quiet") // quieter output 
             .arg(trackurl)
@@ -295,9 +308,10 @@ impl App {
             .stderr(Stdio::null())  // discard stderr
             .spawn() // start the process
             .map_err(|e| anyhow::anyhow!("failed to spawn mpv for url '{}': {}", trackurl, e))?;
-    
+        
+        std::thread::sleep
+        (std::time::Duration::from_millis(100));
         self.mpv = Some(childproc);
-        self.playing = true; // just to be sure
         Ok(())
     }
 
@@ -308,6 +322,7 @@ impl App {
         let nextidx = match self.repeat {
             RepeatType::None => {
                 if self.currentqueueidx >= self.queue.queue.len() as u32 - 1 {
+                    // no more songs to play
                     self.playing = false;
                     self.currentdurationsecs = 0;
                     return Ok(());
@@ -327,6 +342,7 @@ impl App {
 
         self.currentqueueidx = nextidx;
         self.queuestate.select(Some(nextidx as usize));
+        self.playing = true;
         self.playcurrenttrack()?;
         Ok(())
     }
@@ -342,6 +358,7 @@ impl App {
         };
         self.currentqueueidx = previdx;
         self.queuestate.select(Some(previdx as usize));
+        self.playing = true;
         self.playcurrenttrack()?;
 
         Ok(())
@@ -356,23 +373,8 @@ impl App {
     }
 
     fn pause(&mut self) -> Result<()> {
-        let (mpvrunning, pid) = match backend::getmpvpid() {
-            Ok(pid) => (true, pid),
-            Err(_) => (false, String::new()),
-        };
-
-        if mpvrunning {
-            if self.playing {
-                backend::pause(pid)?;
-                self.playing = false;
-            } else {
-                backend::unpause(pid)?;
-                self.playing = true;
-            }
-        } else {
-            self.playing = false;
-        }
-
+        backend::pause(MPVSOCKET)?;
+        self.playing = !self.playing;
         Ok(())
     }
 }
@@ -458,10 +460,10 @@ fn main() -> Result<()> {
         tracksstate: ListState::default(),
         queuestate: ListState::default()
     };
-    app.playlistsstate.select(Some(0));
-    app.tracksstate.select(None);
-    app.queuestate.select(None);
+
+    app.firstrun()?;
     let mut counter: u8 = 0;
+
     // --- main loop ---
     while app.running {
         draw(&mut terminal, &mut app)?;
@@ -482,6 +484,7 @@ fn main() -> Result<()> {
     }
     
     // -- cleanup ---
+    backend::killallmpv();
     execute!(io::stdout(), LeaveAlternateScreen)?;
     disable_raw_mode()?;
     Ok(())

@@ -5,10 +5,13 @@ this is a **work in progress**
 a tui wrapper for mpv
 
 ## requirements
+### stuff you probably have to install
 yt-dlp
 mpv
 
-just use the latest version cmon
+### stuff you probably dont have to install
+kill
+pidof
 
 ## screenshots
 ![ui](assets/ui.png)

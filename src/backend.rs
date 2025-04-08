@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::process::{Command, Stdio};
 use anyhow::Result;
 
 /// gets duration of video using yt-dlp
@@ -134,50 +134,56 @@ pub fn videourlfromid(id: String) -> String {
     String::from(format!("https://www.youtube.com/watch?v={}", id))
 }
 
-/// gets pid of mpv process
+/// pauses playback
+/// 
+/// # arguments 
+/// * none
 /// 
 /// # returns
-/// * 'pid' - pid of mpv process
-pub fn getmpvpid() -> Result<String> {
-    let output = Command::new("pidof")
-        .arg("mpv")
-        .output()?;
+/// * none
+pub fn pause(mpvsocket: &str) -> Result<()> {
+    let echo_output = Command::new("echo")
+        .arg(r#"{"command": ["cycle", "pause"]}"#)
+        .stdout(Stdio::piped())
+        .spawn()?;
 
-    if !output.status.success() {
-        return Err(anyhow::anyhow!("failed to get mpv pid"));
+    if let Some(echo_stdout) = echo_output.stdout {
+        let socat_output = Command::new("socat")
+            .arg("-")
+            .arg(mpvsocket)
+            .stdin(Stdio::from(echo_stdout)) 
+            .stdout(Stdio::null()) 
+            .stderr(Stdio::piped()) 
+            .output()?;
+
+        if !socat_output.status.success() {
+            let stderr = String::from_utf8_lossy(&socat_output.stderr);
+            eprintln!("failed to send pause command to mpv: {}", stderr);
+        }
+    } else {
+        eprintln!("failed to get stdout from echo command");
     }
 
-    let pid = String::from_utf8(output.stdout)?;
-
-    Ok(pid)
-}
-
-/// unpauses mpv process
-/// 
-/// # arguments
-/// * 'mpvpid' - pid of mpv process
-/// 
-/// # returns
-/// * nothing
-pub fn unpause(mpvpid: String) -> Result<()> {
-    Command::new("kill")
-        .arg("-s")
-        .arg("CONT")
-        .arg(mpvpid);
     Ok(())
 }
 
-/// pauses mpv process
-/// 
-/// # arguments
-/// * 'mpvpid' - pid of mpv process
-/// 
-/// # returns
-/// * nothing
-pub fn pause(mpvpid: String) -> Result<()> {
-    Command::new("kill")
-        .arg("-s")
-        .arg("STOP")
-        .arg(mpvpid);
-    Ok(())
+pub fn killallmpv() {
+    let output = Command::new("pidof")
+        .arg("mpv")
+        .output()
+        .unwrap();
+
+    if !&output.status.success() {
+        return;
+    }
+
+    for pid in output.stdout.split(|&x| x == b' ').into_iter().map(|x| std::str::from_utf8(x).unwrap()).into_iter() {
+        let output = Command::new("kill")
+            .arg(pid)
+            .output();
+
+        if !output.unwrap().status.success() {
+            eprintln!("failed to kill mpv with pid {}", pid);
+        }
+    }
 }
