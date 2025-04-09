@@ -6,6 +6,7 @@ a tui wrapper for mpv
 
 ## requirements
 ### stuff you probably have to install
+cargo
 yt-dlp
 mpv
 
@@ -13,7 +14,7 @@ mpv
 kill
 pidof
 
-## quickstart
+## installing
 #### install yt-dlp:
 ```
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ~/.local/bin/yt-dlp
@@ -28,9 +29,22 @@ or with your favorite package manager
 (https://github.com/yt-dlp/yt-dlp/wiki/Installation)
 
 #### install mpv:
-use your favorite package manager
-or
-https://mpv.io/installation/
+use your favorite package manager  
+or  
+https://mpv.io/installation/  
+
+#### install rust
+```
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+#### install this:
+```
+git clone https://github.com/ellipticobj/mpvlayer.git
+cd mpvlayer
+cargo build --release
+mv target/release/mpvlayer /usr/local/bin/mpvlayer
+```
 
 ## screenshots
 ![ui](assets/ui.png)
