@@ -4,7 +4,6 @@ use ratatui::{
 
 use crate::consts::{App, CurrentColumn, Track};
 
-static CONTROLSLENGTH: u16 = 21;
 static SONGINFOPERCENT: u16 = 70;
 
 /// main constructor
@@ -20,7 +19,7 @@ static SONGINFOPERCENT: u16 = 70;
 ///     * controls
 ///     * songinfo
 ///     * progressbar
-pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect, Rect) {
+pub fn construct(area: Rect, isplaying: &bool) -> (Rect, Rect, Rect, Rect, Rect, Rect, Rect) {
     let verticalchunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -44,11 +43,17 @@ pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect, Rect) {
 
     let bottomchunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(CONTROLSLENGTH),         // controls
-                Constraint::Percentage(SONGINFOPERCENT),    // song name
-                Constraint::Min(20)                         // progress bar
-            ])
+            .constraints(
+                if isplaying.to_owned() {[
+                    Constraint::Length(21),         // controls
+                    Constraint::Percentage(SONGINFOPERCENT),    // song name
+                    Constraint::Min(20)                         // progress bar
+                ]} else {[
+                    Constraint::Length(20),         // controls
+                    Constraint::Percentage(SONGINFOPERCENT),    // song name
+                    Constraint::Min(20)                         // progress bar
+                ]}
+            )
             .split(bottomlayout);
 
     let playlists = topchunks[0];
@@ -110,7 +115,13 @@ fn getplaylistscont(playlists: &Vec<crate::consts::Playlist>, infocus: bool) -> 
                 )
                 .title(" playlists ")
         )
-        .highlight_style(Style::default().bg(Color::LightMagenta))
+        .highlight_style(
+            if infocus {
+                Style::default().bg(Color::Magenta).fg(Color::White)
+            } else {
+                Style::default().bg(Color::LightMagenta).fg(Color::White)
+            }
+        )
         .highlight_symbol("> ");
 
     playlistslist
@@ -143,7 +154,13 @@ fn gettrackscont(tracks: &Vec<crate::consts::Track>, infocus: bool) -> List {
                 )
                 .title(" tracks ")
         )
-        .highlight_style(Style::default().bg(Color::LightMagenta))
+        .highlight_style(
+            if infocus {
+                Style::default().bg(Color::Magenta).fg(Color::White)
+            } else {
+                Style::default().bg(Color::LightMagenta).fg(Color::White)
+            }
+        )
         .highlight_symbol("> ");
 
     trackslist
@@ -176,7 +193,13 @@ fn getqueuecont(queue: &Vec<Track>, infocus: bool) -> List<'static> {
                 )
                 .title(" queue ")
         )
-        .highlight_style(Style::default().bg(Color::LightMagenta))
+        .highlight_style(
+            if infocus {
+                Style::default().bg(Color::Magenta).fg(Color::White)
+            } else {
+                Style::default().bg(Color::LightMagenta).fg(Color::White)
+            }
+        )
         .highlight_symbol("> ");
 
     queuelist
@@ -230,6 +253,7 @@ fn getsonginfocont(queue: &Vec<Track>, currentqueueidx: u32, shuffle: bool, repe
             Block::default()
                 .title_top(" currently playing ")
                 .title_top(controlsstateline)
+                .border_type(BorderType::Rounded)
                 .borders(Borders::ALL),
         )
         .style(Style::default().fg(Color::Magenta))
@@ -256,7 +280,11 @@ fn getprogressbar(currentprogresssecs: u32, totalsecs: u32) -> Gauge<'static> {
     }
 
     Gauge::default()
-        .block(Block::default().title(format!(" {}/{} ", currentprogress, totalprogress)).borders(Borders::ALL))
+        .block(
+            Block::default().title(format!(" {}/{} ", currentprogress, totalprogress))
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+        )
         .style(Style::default().fg(Color::Magenta))
         .gauge_style(Style::default().fg(Color::LightMagenta))
         .label("")
@@ -268,6 +296,7 @@ fn getcreditscont(version: &str) -> Block<'static> {
     Block::new()
         .title_top(format!("mpvlayer ── v{} ", version))
         .title_top(Line::from(" complain at https://github.com/ellipticobj/mpvlayer").right_aligned())
+        .border_type(BorderType::Rounded)
         .borders(Borders::TOP)
 }
 

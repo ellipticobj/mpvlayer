@@ -59,15 +59,35 @@ pub fn firstrun(app: &mut App) -> Result<()> {
 
 pub fn ontick(app: &mut App, counter: &u8) -> Result<()> {
     if counter == &3 { // every second
-        if app.playing {app.currentdurationsecs += 1;} // add 1 second if playing
-    } else {
-        if !app.playing {
-            let queueidx = app.currentqueueidx as usize;
-            let queuevec = &app.queue;
-            if queuevec.len() > queueidx {
-                if app.currentdurationsecs > queuevec[queueidx].duration {
-                    app.currentdurationsecs = 0;
-                    backend::playnexttrack(app)?;
+        if app.playing {
+            // Get current position from MPV instead of incrementing our own counter
+            if let Ok(mpv_position) = backend::getplaybackpos(crate::consts::MPVSOCKET) {
+                app.currentdurationsecs = mpv_position;
+                
+                // Check if we've reached the end of the track
+                let queueidx = app.currentqueueidx as usize;
+                let queuevec = &app.queue;
+                if queuevec.len() > queueidx {
+                    let track_duration = queuevec[queueidx].duration;
+                    // If we're near the end of the track, play the next one
+                    // Use a small buffer (1 second) to ensure we change tracks before the end
+                    if mpv_position >= track_duration.saturating_sub(1) {
+                        app.currentdurationsecs = 0;
+                        backend::playnexttrack(app)?;
+                    }
+                }
+            } else {
+                // Fallback: increment our counter if we can't get the position from MPV
+                app.currentdurationsecs += 1;
+                
+                // Also check for end of track in fallback mode
+                let queueidx = app.currentqueueidx as usize;
+                let queuevec = &app.queue;
+                if queuevec.len() > queueidx {
+                    if app.currentdurationsecs >= queuevec[queueidx].duration {
+                        app.currentdurationsecs = 0;
+                        backend::playnexttrack(app)?;
+                    }
                 }
             }
         }

@@ -1,6 +1,7 @@
 use std::{
     io, time::Duration
 };
+use constructors::{construct, rendermainview};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
@@ -22,7 +23,7 @@ mod consts;
 
 fn draw(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
     terminal.draw(|frame| {
-        constructors::rendermainview(app, frame, constructors::construct(frame.area()))
+        rendermainview(app, frame, construct(frame.area(), &app.playing))
     })?;
 
     Ok(())
@@ -99,9 +100,16 @@ fn main() -> Result<()> {
         url: String::from("https://www.youtube.com/watch?v=lWiRuvoOdGc")
     };
 
+    let tspmo = Track {
+        title: String::from("tspmo"),
+        artist: String::from("tyla da creata"),
+        duration: 180,
+        url: String::from("https://www.youtube.com/watch?v=oLbrmJLlvgM")
+    };
+
     let sigmaplaylist = Playlist {
         name: String::from("sigma"),
-        tracks: vec![surfacebyaerochord.clone(), dumdeedum.clone()]
+        tracks: vec![surfacebyaerochord.clone(), dumdeedum.clone(), tspmo.clone()]
     };
 
     let sigmaplaylistcopy = Playlist {
