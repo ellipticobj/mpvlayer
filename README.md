@@ -13,13 +13,35 @@ mpv
 kill
 pidof
 
+## quickstart
+#### install yt-dlp:
+```
+curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ~/.local/bin/yt-dlp
+chmod a+rx ~/.local/bin/yt-dlp
+```
+or
+```
+python3 -m pip3 install --user yt-dlp
+```
+or with your favorite package manager
+
+(https://github.com/yt-dlp/yt-dlp/wiki/Installation)
+
+#### install mpv:
+use your favorite package manager
+or
+https://mpv.io/installation/
+
 ## screenshots
 ![ui](assets/ui.png)
 
 ## progress
 - [x] ui
 - [x] play/pause
-- [ ] queue
-- [ ] repeat
-- [ ] shuffle
-- [ ] edit library
+- [x] queue
+- [x] repeat
+- [x] shuffle
+- [ ] add playlists from youtube
+- [ ] song caching
+- [ ] edit playlists
+- [ ] 
