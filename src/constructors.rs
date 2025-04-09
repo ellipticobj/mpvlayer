@@ -1,8 +1,8 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Style}, text::Line, widgets::{Block, Borders, Gauge, List, ListItem, Paragraph}, Frame
+    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Style}, text::Line, widgets::{Block, BorderType, Borders, Gauge, List, ListItem, Paragraph}, Frame
 };
 
-use crate::consts::{App, Track};
+use crate::consts::{App, CurrentColumn, Track};
 
 static CONTROLSLENGTH: u16 = 21;
 static SONGINFOPERCENT: u16 = 70;
@@ -62,36 +62,6 @@ pub fn construct(area: Rect) -> (Rect, Rect, Rect, Rect, Rect, Rect, Rect) {
     let credits = verticalchunks[2];
 
     (playlists, tracks, queue, controls, songname, progressbar, credits)
-
-}
-fn getplaylistscont(playlists: &Vec<crate::consts::Playlist>) -> List {
-    // gets the list of playlists
-    let playlistitems: Vec<ListItem> = playlists
-        .iter()
-        .map(|p| ListItem::new(format!(" {}", p.name.as_str())))
-        .collect();
-
-    let playlistslist = List::new(playlistitems)
-        .block(Block::default().borders(Borders::ALL).title(" playlists "))
-        .highlight_style(Style::default().bg(Color::LightMagenta))
-        .highlight_symbol("> ");
-
-    playlistslist
-}
-
-fn gettrackscont(tracks: &Vec<crate::consts::Track>) -> List {
-    // gets the list of tracks
-    let trackitems: Vec<ListItem> = tracks
-        .iter()
-        .map(|t| ListItem::new(format!(" {} - {}", t.title.as_str(), t.artist.as_str())))
-        .collect();
-
-    let trackslist = List::new(trackitems)
-        .block(Block::default().borders(Borders::ALL).title(" tracks "))
-        .highlight_style(Style::default().bg(Color::LightMagenta))
-        .highlight_symbol("> ");
-
-    trackslist
 }
 
 fn getcontrolscont(app: &App) -> Paragraph {
@@ -104,12 +74,82 @@ fn getcontrolscont(app: &App) -> Paragraph {
     }
 
     Paragraph::new(controls)
-        .block(Block::default().borders(Borders::ALL).title(" controls "))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" controls ")
+        )
         .style(Style::default().fg(Color::Magenta))
         .alignment(ratatui::layout::Alignment::Center)
 }
 
-fn getqueuecont(queue: &Vec<Track>) -> List<'static> {
+fn getplaylistscont(playlists: &Vec<crate::consts::Playlist>, infocus: bool) -> List {
+    // gets the list of playlists
+    let playlistitems: Vec<ListItem> = playlists
+        .iter()
+        .map(|p| ListItem::new(format!(" {}", p.name.as_str())))
+        .collect();
+
+    let playlistslist = List::new(playlistitems)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(
+                    if infocus {
+                        Style::default().fg(Color::Magenta)
+                    } else {
+                        Style::default()
+                    }
+                )
+                .border_type(
+                    if infocus {
+                        BorderType::Thick
+                    } else {
+                        BorderType::Rounded
+                    }
+                )
+                .title(" playlists ")
+        )
+        .highlight_style(Style::default().bg(Color::LightMagenta))
+        .highlight_symbol("> ");
+
+    playlistslist
+}
+
+fn gettrackscont(tracks: &Vec<crate::consts::Track>, infocus: bool) -> List {
+    // gets the list of tracks
+    let trackitems: Vec<ListItem> = tracks
+        .iter()
+        .map(|t| ListItem::new(format!(" {} - {}", t.title.as_str(), t.artist.as_str())))
+        .collect();
+
+    let trackslist = List::new(trackitems)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(
+                    if infocus {
+                        Style::default().fg(Color::Magenta)
+                    } else {
+                        Style::default()
+                    }
+                )
+                .border_type(
+                    if infocus {
+                        BorderType::Thick
+                    } else {
+                        BorderType::Rounded
+                    }
+                )
+                .title(" tracks ")
+        )
+        .highlight_style(Style::default().bg(Color::LightMagenta))
+        .highlight_symbol("> ");
+
+    trackslist
+}
+
+fn getqueuecont(queue: &Vec<Track>, infocus: bool) -> List<'static> {
     // gets the play queue
     let queueitems: Vec<ListItem> = queue
         .iter()
@@ -117,7 +157,25 @@ fn getqueuecont(queue: &Vec<Track>) -> List<'static> {
         .collect();
 
     let queuelist = List::new(queueitems)
-        .block(Block::default().borders(Borders::ALL).title(" queue "))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(
+                    if infocus {
+                        Style::default().fg(Color::Magenta)
+                    } else {
+                        Style::default()
+                    }
+                )
+                .border_type(
+                    if infocus {
+                        BorderType::Thick
+                    } else {
+                        BorderType::Rounded
+                    }
+                )
+                .title(" queue ")
+        )
         .highlight_style(Style::default().bg(Color::LightMagenta))
         .highlight_symbol("> ");
 
@@ -225,11 +283,11 @@ fn getcreditscont(version: &str) -> Block<'static> {
 pub fn rendermainview(app: &mut App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect, Rect)) {
     let (playlists, tracks, queue, controls, songinfo, progressbar, credits) = areas;
 
-    let playlistscont = getplaylistscont(&app.playlists);
-    frame.render_stateful_widget(playlistscont, playlists, &mut app.playlistsstate);
+    let playlistscont = getplaylistscont(&app.playlists, app.currentcolumn == CurrentColumn::Playlists);
+    frame.render_stateful_widget(playlistscont, playlists, &mut app.playliststate);
     
-    if !app.playlists.is_empty() && (app.currentlyselectedplaylistidx as usize) < app.playlists.len() {
-        let trackscont = gettrackscont(&app.playlists[app.currentlyselectedplaylistidx as usize].tracks);
+    if !app.playlists.is_empty() && (app.playliststate.selected().unwrap_or(0)) < app.playlists.len() {
+        let trackscont = gettrackscont(&app.playlists[app.playliststate.selected().unwrap_or(0)].tracks, app.currentcolumn == CurrentColumn::Tracks);
         frame.render_stateful_widget(trackscont, tracks, &mut app.tracksstate);
     } else {
         frame.render_widget(Block::default().borders(Borders::ALL).title(" tracks "), tracks);
@@ -253,6 +311,6 @@ pub fn rendermainview(app: &mut App, frame: &mut Frame, areas: (Rect, Rect, Rect
     }
     frame.render_widget(progressbarcont, progressbar);
 
-    let queuecont = getqueuecont(&app.queue);
+    let queuecont = getqueuecont(&app.queue, app.currentcolumn == CurrentColumn::Queue);
     frame.render_stateful_widget(queuecont, queue, &mut app.queuestate);
 }

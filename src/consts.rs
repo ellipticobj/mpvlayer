@@ -1,6 +1,8 @@
 use std::process::Child;
-
 use ratatui::widgets::ListState;
+
+pub static MAXQUEUELENGTH: usize = 50;
+pub static MPVSOCKET: &str = "/tmp/mpvsocket";
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Track {
@@ -32,29 +34,27 @@ pub enum CurrentColumn {
 
 #[derive(Debug)]
 pub struct App {
-    pub running: bool,
-    pub playing: bool,
-    pub version: String,
+    pub running: bool,      // is the app running
+    pub playing: bool,      // is music playing
+    pub version: String,    // app version (x.x.x)
 
-    pub playlists: Vec<Playlist>,
-    pub queue: Vec<Track>,
-    pub queuebeforeshuffle: Option<Vec<Track>>,
-    pub queuebeforerepeat: Option<Vec<Track>>,
+    pub playlists: Vec<Playlist>,               // list of playlists
+    pub queue: Vec<Track>,                      // queue of tracks
+    pub queuebeforeshuffle: Option<Vec<Track>>, // queue before shuffle is active
+    pub queuebeforerepeat: Option<Vec<Track>>,  // original queue
 
-    pub currentqueueidx: u32,
-    pub currentplaylistidx: u32,
-    pub currentdurationsecs: u32,
+    pub currentqueueidx: u32,                   // index of currently playing track in teh queue
+    pub currentplaylistidx: u32,                // index of playlist that the currently playing song is in
+    pub currentdurationsecs: u32,               // elapsed duration in the currently playing track
 
-    pub shuffle: bool,
-    pub repeat: RepeatType,
+    pub shuffle: bool,      // shuffle state
+    pub repeat: RepeatType, // repeat state
 
-    pub mpv: Option<Child>,
+    pub mpv: Option<Child>, // mpv process
 
-    pub currentlyselectedplaylistidx: u32,
-    pub currentlyselectedtrackidx: u32,
-    pub currentlyselectedcolumn: CurrentColumn,
+    pub currentcolumn: CurrentColumn, // currently selected column (track, playlist, queue)
 
-    pub playlistsstate: ListState,
-    pub tracksstate: ListState,
-    pub queuestate: ListState
+    pub playliststate: ListState,  // currently selecetd playlist
+    pub tracksstate: ListState,     // currently selected track
+    pub queuestate: ListState       // currently selected track in queue
 }

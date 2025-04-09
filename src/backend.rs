@@ -1,5 +1,7 @@
 use std::process::{Command, Stdio};
 use anyhow::Result;
+use rand::seq::SliceRandom;
+use crate::consts::{App, RepeatType, Track, MAXQUEUELENGTH, MPVSOCKET};
 
 /// gets duration of video using yt-dlp
 /// 
@@ -167,6 +169,13 @@ pub fn pause(mpvsocket: &str) -> Result<()> {
     Ok(())
 }
 
+/// kills all currently running mpv processes using kill
+/// 
+/// # arguments
+/// * none
+/// 
+/// # returns
+/// * none
 pub fn killallmpv() {
     let output = Command::new("pidof")
         .arg("mpv")
@@ -186,4 +195,244 @@ pub fn killallmpv() {
             eprintln!("failed to kill mpv with pid {}", pid);
         }
     }
+}
+
+/// plays the current track using mpv
+/// 
+/// spawns an mpv child process to play the track
+/// 
+/// # arguments
+/// * 'app' - mutable reference to the app state
+/// 
+/// # returns
+/// * none
+pub fn playcurrenttrack(app: &mut App) -> Result<()> {
+    // --- safety checks ---
+    let trackidx = app.currentqueueidx as usize;
+
+    if app.queue.is_empty() || trackidx >= app.queue.len() {
+        // if there is nothing to play
+        app.playing = false;
+        app.currentdurationsecs = 0;
+
+        // kill any existing child processes
+        if let Some(mut child) = app.mpv.take() {
+            let _ = child.kill().map_err(|e| eprintln!("failed to kill child: {}", e));
+        }
+        return Ok(());
+    }
+
+    // --- kill previous child mpv instance ---
+    if let Some(mut child) = app.mpv.take() {
+        match child.kill() {
+            Ok(_) => { /* succesfully killed */ }
+            Err(e) => eprintln!("failed to kill child: {}", e),
+        }
+        // child.wait()?; // if issues occur
+    }
+
+    // --- get url ---
+    let trackurl = &app.queue[trackidx].url;
+    // let tracktitle = &app.queue[track_idx].title;
+
+    // --- reset progress timer ---
+    app.currentdurationsecs = 0;
+
+    // println!("attempting to play: '{}' from {}", tracktitle, trackurl); // debug print
+    let childproc = std::process::Command::new("mpv")
+        .arg("--no-video")
+        .arg("--no-terminal")
+        .arg(format!("--input-ipc-server={}", MPVSOCKET))
+        .arg("--pause=no")
+        .arg("--keep-open=yes")
+        // .arg("--no-audio-display")? .arg("--vo=null")? // audio-only if needed 
+        // .arg("--really-quiet") // quieter output 
+        .arg(trackurl)
+        .stdout(std::process::Stdio::null())  // discard stdout
+        .stderr(std::process::Stdio::null())  // discard stderr
+        .spawn() // start the process
+        .map_err(|e| anyhow::anyhow!("failed to spawn mpv for url '{}': {}", trackurl, e))?;
+    
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    app.mpv = Some(childproc);
+    Ok(())
+}
+
+/// plays the next track
+/// 
+/// # arguments
+/// * 'app' - mutable reference to the app state
+/// 
+/// # returns
+/// * none
+pub fn playnexttrack(app: &mut App) -> Result<()> {
+    if app.queue.is_empty() {
+        return Ok(());
+    }
+
+    let nextidx = if app.currentqueueidx == app.queue.len() as u32 - 1 {
+        0
+    } else {
+        app.currentqueueidx + 1
+    };
+
+    app.currentqueueidx = nextidx;
+    app.queuestate.select(Some(nextidx as usize));
+    app.playing = true;
+    playcurrenttrack(app)?;
+    Ok(())
+}
+
+/// plays the previous track
+/// 
+/// # arguments
+/// * 'app' - mutable reference to the app state
+/// 
+/// # returns
+/// * none
+pub fn playprevtrack(app: &mut App) -> Result<()> {
+    if app.queue.is_empty() {
+        return Ok(());
+    }
+    let previdx = if app.currentqueueidx == 0 {
+        app.queue.len() as u32 - 1   
+    } else {
+        app.currentqueueidx - 1
+    };
+    app.currentqueueidx = previdx;
+    app.queuestate.select(Some(previdx as usize));
+    app.playing = true;
+    playcurrenttrack(app)?;
+
+    Ok(())
+}
+
+/// pauses mpv if app.playing is true
+/// 
+/// # arguments
+/// * 'app' - mutable reference to the app state
+/// 
+/// # returns
+/// * none
+pub fn togglepause(app: &mut App) -> Result<()> {
+    if app.playing {
+        pause(MPVSOCKET)?;
+        app.playing = !app.playing;
+    }
+    Ok(())
+}
+
+/// toggles shuffle
+/// 
+/// # arguments
+/// * 'app' - mutable reference to the app state
+/// 
+/// # returns
+/// * none
+pub fn toggleshuffle(app: &mut App) -> Result<()> {
+    app.shuffle = !app.shuffle;
+    if !app.queue.is_empty() {
+        shufflequeue(app)?;
+    }
+    Ok(())
+}
+
+/// cycles the repeat type
+/// 
+/// # arguments
+/// * 'app' - mutable reference to the app state
+/// 
+/// # returns
+/// * none
+pub fn cyclerepeat(app: &mut App) -> Result<()> {
+    match app.repeat {
+        RepeatType::None => app.repeat = RepeatType::All,
+        RepeatType::All => app.repeat = RepeatType::One,
+        RepeatType::One => app.repeat = RepeatType::None
+    }
+    repeatqueue(app)?;
+    Ok(())
+}
+
+/// repeats the queue
+/// 
+/// # arguments
+/// * 'app' - mutable reference to the app state
+/// 
+/// # returns
+/// * none
+pub fn repeatqueue(app: &mut App) -> Result<()> {
+    if !app.queue.is_empty() {
+        match app.repeat {
+            RepeatType::All => {
+                // if queue is not at max length, repeat current queue until it reaches MAXQUEUELENGTH
+                if app.queue.len() < MAXQUEUELENGTH {
+                    let originallen = app.queue.len();
+                    while app.queue.len() < MAXQUEUELENGTH {
+                        let spacetofill = MAXQUEUELENGTH - app.queue.len();
+                        // chunks to add is the minimum of the remaining space and the original length
+                        let chunkstoadd = std::cmp::min(originallen, spacetofill);
+                        // append the extension to the queue
+                        let mut extension: Vec<Track> = app.queue[0..chunkstoadd].to_vec();
+                        app.queue.append(&mut extension);
+                    }
+                }
+            },
+            RepeatType::One => {
+                // store current queue for later
+                app.queuebeforerepeat = Some(app.queue.clone());
+                // get current song
+                let currentsong = app.queue[app.currentqueueidx as usize].clone();
+                // repeat current song MAXQUEUELENGTH times
+                app.queue = vec![currentsong; MAXQUEUELENGTH as usize];
+            },
+            RepeatType::None => {
+                // for no repeat, we need to ensure the queue is in its original state
+                if let Some(ref original) = app.queuebeforerepeat {
+                    app.queue = original.clone();
+                } else {
+                    // if no original queue exists, use the current playlist
+                    let playlistidx = app.currentplaylistidx as usize;
+                    if playlistidx < app.playlists.len() {
+                        app.queue = app.playlists[playlistidx].tracks.clone();
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// shuffles the queue
+/// 
+/// # arguments
+/// * 'app' - mutable reference to the app state
+/// 
+/// # returns
+/// * none
+pub fn shufflequeue(app: &mut App) -> Result<()> {
+    if !app.queue.is_empty() {
+        if app.shuffle {
+            app.queuebeforeshuffle = Some(app.queue.clone());
+            // Use the rng function from the rand crate
+            let mut rng = rand::rng();
+            app.queue.shuffle(&mut rng);
+            app.currentqueueidx = 0;
+            app.currentdurationsecs = 0;
+            app.queuestate.select(Some(0));
+        } else {
+            if let Some(originalqueue) = app.queuebeforeshuffle.clone() {
+                app.queue = originalqueue;
+            } else {
+                app.queue = app.playlists[app.currentplaylistidx as usize].clone().tracks;
+            }
+            app.queuebeforeshuffle = None;
+            app.currentqueueidx = 0;
+            app.currentdurationsecs = 0;
+            app.queuestate.select(Some(0));
+        }
+    }
+
+    Ok(())
 }
