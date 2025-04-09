@@ -55,8 +55,10 @@ mv target/release/mpvlayer /usr/local/bin/mpvlayer
 - [x] queue
 - [x] repeat
 - [x] shuffle
+- [ ] fix weird bug where mpvlayer thinks the playing song is the first song in the playlist when enter is pressed in another song in the playlists column
 - [ ] add playlists from youtube
 - [ ] song caching
 - [ ] edit playlists
 - [ ] attempt to restart mpv if mpv is killed
 - [ ] do not open another mpvlayer instance if one is active already
+- [ ] keep current queue if enter is pressed in queue column
