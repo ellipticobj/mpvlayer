@@ -1,6 +1,9 @@
+use std::mem::transmute;
+
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect}, style::{Color, Style}, text::Line, widgets::{Block, BorderType, Borders, Gauge, List, ListItem, Paragraph}, Frame
 };
+use ratatui_textarea::TextArea;
 
 use crate::consts::{App, CurrentColumn, Track};
 
@@ -35,9 +38,9 @@ pub fn construct(area: Rect, isplaying: &bool) -> (Rect, Rect, Rect, Rect, Rect,
     let topchunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Fill(1),            // playlists
-                Constraint::Fill(3),            // tracks
-                Constraint::Fill(1)             // queue
+                Constraint::Fill(2),            // playlists
+                Constraint::Fill(5),            // tracks
+                Constraint::Fill(2)             // queue
             ])
             .split(toplayout);
 
@@ -45,11 +48,11 @@ pub fn construct(area: Rect, isplaying: &bool) -> (Rect, Rect, Rect, Rect, Rect,
             .direction(Direction::Horizontal)
             .constraints(
                 if isplaying.to_owned() {[
-                    Constraint::Length(21),         // controls
+                    Constraint::Length(21),                     // controls
                     Constraint::Percentage(SONGINFOPERCENT),    // song name
                     Constraint::Min(20)                         // progress bar
                 ]} else {[
-                    Constraint::Length(20),         // controls
+                    Constraint::Length(20),                     // controls
                     Constraint::Percentage(SONGINFOPERCENT),    // song name
                     Constraint::Min(20)                         // progress bar
                 ]}
@@ -82,6 +85,7 @@ fn getcontrolscont(app: &App) -> Paragraph {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title(" controls ")
         )
         .style(Style::default().fg(Color::Magenta))
@@ -295,9 +299,21 @@ fn getcreditscont(version: &str) -> Block<'static> {
     // gets the credits
     Block::new()
         .title_top(format!("mpvlayer ── v{} ", version))
-        .title_top(Line::from(" complain at https://github.com/ellipticobj/mpvlayer").right_aligned())
+        .title_top(Line::from(" https://github.com/ellipticobj/mpvlayer").right_aligned())
         .border_type(BorderType::Rounded)
         .borders(Borders::TOP)
+}
+
+fn windowsizepass(frame: &Frame) -> bool {
+    let termwin = frame.area();
+    let width = termwin.width;
+    let height = termwin.height;
+
+    if width < 60 || height < 10 {
+        false
+    } else {
+        true
+    }
 }
 
 /// renders the main view
@@ -310,36 +326,58 @@ fn getcreditscont(version: &str) -> Block<'static> {
 /// # returns
 /// * nothing
 pub fn rendermainview(app: &mut App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect, Rect)) {
-    let (playlists, tracks, queue, controls, songinfo, progressbar, credits) = areas;
+    let sizecheck = windowsizepass(frame);
 
-    let playlistscont = getplaylistscont(&app.playlists, app.currentcolumn == CurrentColumn::Playlists);
-    frame.render_stateful_widget(playlistscont, playlists, &mut app.playliststate);
-    
-    if !app.playlists.is_empty() && (app.playliststate.selected().unwrap_or(0)) < app.playlists.len() {
-        let trackscont = gettrackscont(&app.playlists[app.playliststate.selected().unwrap_or(0)].tracks, app.currentcolumn == CurrentColumn::Tracks);
-        frame.render_stateful_widget(trackscont, tracks, &mut app.tracksstate);
+    if sizecheck {
+        let (playlists, tracks, queue, controls, songinfo, progressbar, credits) = areas;
+
+        let playlistscont = getplaylistscont(&app.playlists, app.currentcolumn == CurrentColumn::Playlists);
+        frame.render_stateful_widget(playlistscont, playlists, &mut app.playliststate);
+        
+        if !app.playlists.is_empty() && (app.playliststate.selected().unwrap_or(0)) < app.playlists.len() {
+            let trackscont = gettrackscont(&app.playlists[app.playliststate.selected().unwrap_or(0)].tracks, app.currentcolumn == CurrentColumn::Tracks);
+            frame.render_stateful_widget(trackscont, tracks, &mut app.tracksstate);
+        } else {
+            frame.render_widget(Block::default().borders(Borders::ALL).title(" tracks "), tracks);
+        }
+
+        let controlscont = getcontrolscont(app);
+        frame.render_widget(controlscont, controls);
+
+        let songinfocont = getsonginfocont(&app.queue, app.currentqueueidx, app.shuffle, app.repeat);
+        frame.render_widget(songinfocont, songinfo);
+
+        let creditscont = getcreditscont(&app.version);
+        frame.render_widget(creditscont, credits);
+
+        let progressbarcont;
+        // if queue is not empty and current index is valid and current duration is valid
+        if !app.queue.is_empty() && (app.currentqueueidx as usize) < app.queue.len() && app.currentdurationsecs <= app.queue[app.currentqueueidx as usize].duration {
+            progressbarcont = getprogressbar(app.currentdurationsecs, app.queue[app.currentqueueidx as usize].duration);
+        } else {
+            progressbarcont = getprogressbar(0, 0);
+        }
+        frame.render_widget(progressbarcont, progressbar);
+
+        let queuecont = getqueuecont(&app.queue, app.currentcolumn == CurrentColumn::Queue);
+        frame.render_stateful_widget(queuecont, queue, &mut app.queuestate);
     } else {
-        frame.render_widget(Block::default().borders(Borders::ALL).title(" tracks "), tracks);
-    }
+        let area = frame.area();
+        let displaytext = vec![
+            Line::from("window needs to be"),
+            Line::from("at least 60x10")
+        ];
+        
+        let cont = Paragraph::new(displaytext)
+            .block(
+                Block::default()
+                    .border_type(BorderType::Rounded)
+                    .borders(Borders::ALL)
+            )
+            .style(Style::default().fg(Color::Magenta))
+            .alignment(ratatui::layout::Alignment::Center)
+            .wrap(ratatui::widgets::Wrap { trim: true });
 
-    let controlscont = getcontrolscont(app);
-    frame.render_widget(controlscont, controls);
-
-    let songinfocont = getsonginfocont(&app.queue, app.currentqueueidx, app.shuffle, app.repeat);
-    frame.render_widget(songinfocont, songinfo);
-
-    let creditscont = getcreditscont(&app.version);
-    frame.render_widget(creditscont, credits);
-
-    let progressbarcont;
-    // if queue is not empty and current index is valid and current duration is valid
-    if !app.queue.is_empty() && (app.currentqueueidx as usize) < app.queue.len() && app.currentdurationsecs <= app.queue[app.currentqueueidx as usize].duration {
-        progressbarcont = getprogressbar(app.currentdurationsecs, app.queue[app.currentqueueidx as usize].duration);
-    } else {
-        progressbarcont = getprogressbar(0, 0);
-    }
-    frame.render_widget(progressbarcont, progressbar);
-
-    let queuecont = getqueuecont(&app.queue, app.currentcolumn == CurrentColumn::Queue);
-    frame.render_stateful_widget(queuecont, queue, &mut app.queuestate);
+        frame.render_widget(cont, area);
+    };
 }

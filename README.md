@@ -58,4 +58,5 @@ mv target/release/mpvlayer /usr/local/bin/mpvlayer
 - [ ] add playlists from youtube
 - [ ] song caching
 - [ ] edit playlists
-- [ ] 
+- [ ] attempt to restart mpv if mpv is killed
+- [ ] do not open another mpvlayer instance if one is active already

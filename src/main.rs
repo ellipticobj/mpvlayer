@@ -114,7 +114,7 @@ fn main() -> Result<()> {
 
     let sigmaplaylistcopy = Playlist {
         name: String::from("sigma copy"),
-        tracks: vec![traproyalty.clone(), goodbye.clone(), glockinmyrawri.clone()]
+        tracks: vec![traproyalty.clone(), goodbye.clone(), glockinmyrawri.clone(), surfacebyaerochord.clone(), dumdeedum.clone(), tspmo.clone()]
     };
 
     // --- initialize app ---
