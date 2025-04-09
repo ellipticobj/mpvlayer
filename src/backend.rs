@@ -182,7 +182,7 @@ pub fn getplaybackpos(mpvsocket: &str) -> Result<u32> {
     let requestid = rand::random::<u32>();
     
     let echoout = Command::new("echo")
-        .arg(format!(r#"{{"command": ["get_property", "time-pos"], "request_id": {}}}"#, requestid))
+        .arg(format!(r#"{{"command":["get_property","time-pos"], "request_id": {}}}"#, requestid))
         .stdout(Stdio::piped())
         .spawn()?;
 
