@@ -2,6 +2,7 @@ use std::{
     io, time::Duration
 };
 use constructors::{construct, rendermainview};
+use consts::PopupState;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
@@ -11,8 +12,9 @@ use ratatui::{
     backend::CrosstermBackend, widgets::ListState, Terminal
 };
 use anyhow::Result;
+use fs4::fs_std::FileExt;
 use crate::consts::{
-    App, Playlist, Track, RepeatType, CurrentColumn
+    App, Playlist, Track, RepeatType, CurrentColumn, LOCKPATH
 };
 
 mod app;
@@ -27,33 +29,6 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) ->
     })?;
 
     Ok(())
-}
-
-impl App {
-    fn onkey(&mut self, key: KeyCode) -> Result<()> {
-        match key {
-            // --- controls ---
-            KeyCode::Char('q') => self.running = false,
-            KeyCode::Char(' ') => backend::togglepause(self)?,
-            KeyCode::Char('>') => backend::playnexttrack(self)?,
-            KeyCode::Char('<') => backend::playprevtrack(self)?,
-            KeyCode::Char('s') => backend::toggleshuffle(self)?,
-            KeyCode::Char('r') => backend::cyclerepeat(self)?,
-            
-            // --- navigation ---
-            KeyCode::Up | KeyCode::Down | KeyCode::Char('k') | KeyCode::Char('j') => {
-                let isup = key == KeyCode::Up || key == KeyCode::Char('k');
-                app::handleverticalnavigation(self, isup)?;
-            },
-            KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
-                let isleft = key == KeyCode::Left || key == KeyCode::Char('h');
-                app::handlehorizontalnavigation(self, isleft)?;
-            },
-            KeyCode::Enter => app::handleenter(self)?,
-            _ => {}
-        }
-        Ok(())
-    }
 }
 
 fn main() -> Result<()> {
@@ -122,6 +97,7 @@ fn main() -> Result<()> {
         running: true,
         playing: false,
         version: String::from("0.0.1"),
+        repeatedinstance: false,
         playlists: vec![sigmaplaylist.clone(), sigmaplaylistcopy.clone()],
         queue: Vec::new(),
         queuebeforeshuffle: None,
@@ -131,11 +107,17 @@ fn main() -> Result<()> {
         currentdurationsecs: 0,
         shuffle: false,
         repeat: RepeatType::None,
-        mpv: None, // don't init mpv yet, only start when user starts playing music
+        mpv: None,
         currentcolumn: CurrentColumn::Playlists,
         playliststate: ListState::default(),
         tracksstate: ListState::default(),
-        queuestate: ListState::default()
+        queuestate: ListState::default(),
+        lockfile: None,
+        popup: PopupState {
+            onscreen: false,
+            title: String::from(""),
+            message: Vec::new()
+        }
     };
 
     app::firstrun(&mut app)?;
@@ -145,24 +127,51 @@ fn main() -> Result<()> {
     while app.running {
         draw(&mut terminal, &mut app)?;
 
+        // --- event Handling ---
         if event::poll(Duration::from_millis(250))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    app.onkey(key.code)?;
+                    let keycode = key.code;
+                    if app.repeatedinstance {
+                        if key.code == KeyCode::Enter {
+                            app.running = false;
+                        }
+                    } else {
+                        app::onkey(&mut app, keycode)?;
+                    }
                 }
             }
         }
-        app::ontick(&mut app, &counter)?;
-        if counter >= 3 {
-            counter = 0;
+
+        if !app.repeatedinstance {
+            app::ontick(&mut app, &counter)?;
+            if counter >= 3 {
+                counter = 0;
+            } else {
+                counter += 1;
+            }
         } else {
-            counter += 1;
+            // Optional: Add a small sleep for repeated instance to prevent busy-waiting
+            std::thread::sleep(Duration::from_millis(50));
         }
     }
+
+    // --- manual cleanup ---
+    // unlock and remove lock file (only if this instance held the lock)
+    if let Some(file) = app.lockfile.take() {
+        let _ = file.unlock();
+        let _ = std::fs::remove_file(LOCKPATH);
+    }
+
+    // kill mpv process 
+    if let Some(mut child) = app.mpv.take() {
+        let _ = child.kill();
+        let _ = child.wait(); // wait for the process to actually exit
+    }
     
-    // -- cleanup ---
-    backend::killallmpv();
+    // restore terminal
     execute!(io::stdout(), LeaveAlternateScreen)?;
     disable_raw_mode()?;
+
     Ok(())
 }

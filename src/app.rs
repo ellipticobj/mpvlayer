@@ -1,7 +1,12 @@
 use anyhow::Result;
+use crossterm::event::KeyCode;
 
-use crate::consts::{App, CurrentColumn};
+use crate::consts::{App, CurrentColumn, LOCKPATH};
 use crate::backend;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::process;
+use fs4::fs_std::FileExt;
 
 pub fn getnextidx(currentopt: Option<usize>, listlen: usize) -> usize {
     if listlen == 0 {
@@ -36,55 +41,83 @@ pub fn getprevidx(currentopt: Option<usize>, listlen: usize) -> usize {
 }
 
 pub fn firstrun(app: &mut App) -> Result<()> {
-    if !app.playlists.is_empty() {
-        // if playlists exist
-        app.playliststate.select(Some(0));
-        
-        if !app.playlists[0].tracks.is_empty() {
-            // if playlist is not empty
-            app.tracksstate.select(Some(0));
-        } else {
-            app.tracksstate.select(None);
-        }
-    } else {
-        app.playliststate.select(None);
-        app.tracksstate.select(None);
-    }
-    
-    app.queuestate.select(None);
-    backend::killallmpv();
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(LOCKPATH)?;
 
-    Ok(())
+    match file.try_lock_exclusive() {
+        Ok(_) => {
+            file.set_len(0)?;
+            writeln!(&file, "{}", process::id())?;
+            app.lockfile = Some(file);
+            println!("Instance {}: Lock acquired successfully.", std::process::id());
+
+            app.repeatedinstance = false;
+
+            // --- initial app state setup ---
+            if !app.playlists.is_empty() {
+                app.playliststate.select(Some(0));
+                if !app.playlists[0].tracks.is_empty() {
+                    app.tracksstate.select(Some(0));
+                } else {
+                    app.tracksstate.select(None);
+                }
+            } else {
+                app.playliststate.select(None);
+                app.tracksstate.select(None);
+            }
+            app.queuestate.select(None);
+
+            Ok(())
+        }
+        Err(_) => {
+            println!("Instance {}: Failed to acquire lock (already held?).", std::process::id()); // Debug
+            app.repeatedinstance = true;
+            app.lockfile = None;
+
+            Ok(())
+        }
+    }
 }
 
 pub fn ontick(app: &mut App, counter: &u8) -> Result<()> {
+    if let Some(child) = &mut app.mpv {
+        if let Ok(Some(_)) = child.try_wait() {
+            // mpv died
+            if app.playing {
+                backend::playcurrenttrack(app)?;
+            }
+        }
+    }
+
     if counter == &3 { // every second
         if app.playing {
-            // Get current position from MPV instead of incrementing our own counter
-            if let Ok(mpv_position) = backend::getplaybackpos(crate::consts::MPVSOCKET) {
-                app.currentdurationsecs = mpv_position;
+            // get current position from MPV instead of incrementing our own counter
+            if let Ok(mpvduration) = backend::getplaybackpos(crate::consts::MPVSOCKET) {
+                app.currentdurationsecs = mpvduration;
                 
-                // Check if we've reached the end of the track
+                // check if we've reached the end of the track
                 let queueidx = app.currentqueueidx as usize;
                 let queuevec = &app.queue;
                 if queuevec.len() > queueidx {
-                    let track_duration = queuevec[queueidx].duration;
-                    // If we're near the end of the track, play the next one
-                    // Use a small buffer (1 second) to ensure we change tracks before the end
-                    if mpv_position >= track_duration.saturating_sub(1) {
+                    let trackduration = queuevec[queueidx].duration;
+                    // if we're near the end of the track, play the next one
+                    // use a small buffer (1 second) to ensure we change tracks before the end
+                    if mpvduration >= trackduration.saturating_sub(1) {
                         app.currentdurationsecs = 0;
                         backend::playnexttrack(app)?;
                     }
                 }
             } else {
-                // Fallback: increment our counter if we can't get the position from MPV
                 app.currentdurationsecs += 1;
                 
-                // Also check for end of track in fallback mode
+                // also check for end of track in fallback mode
                 let queueidx = app.currentqueueidx as usize;
                 let queuevec = &app.queue;
                 if queuevec.len() > queueidx {
-                    if app.currentdurationsecs >= queuevec[queueidx].duration {
+                    if app.currentdurationsecs > queuevec[queueidx].duration {
                         app.currentdurationsecs = 0;
                         backend::playnexttrack(app)?;
                     }
@@ -93,6 +126,49 @@ pub fn ontick(app: &mut App, counter: &u8) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+pub fn onkey(app: &mut App, key: KeyCode) -> Result<()> {
+    // if a popup is on screen
+    if app.popup.onscreen {
+        if key == KeyCode::Enter {
+            app.popup.onscreen = false;
+            return Ok(());
+        }
+        return Ok(());
+    }
+
+    // if this is a repeated instance, only allow enter to close
+    if app.repeatedinstance {
+        if key == KeyCode::Enter {
+            app.running = false;
+            return Ok(());
+        }
+        return Ok(());
+    }
+
+    match key {
+        // --- controls ---
+        KeyCode::Char('q') => app.running = false,
+        KeyCode::Char(' ') => backend::togglepause(app)?,
+        KeyCode::Char('>') => backend::playnexttrack(app)?,
+        KeyCode::Char('<') => backend::playprevtrack(app)?,
+        KeyCode::Char('s') => backend::toggleshuffle(app)?,
+        KeyCode::Char('r') => backend::cyclerepeat(app)?,
+        
+        // --- navigation ---
+        KeyCode::Up | KeyCode::Down | KeyCode::Char('k') | KeyCode::Char('j') => {
+            let isup = key == KeyCode::Up || key == KeyCode::Char('k');
+            handleverticalnavigation(app, isup)?;
+        },
+        KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
+            let isleft = key == KeyCode::Left || key == KeyCode::Char('h');
+            handlehorizontalnavigation(app, isleft)?;
+        },
+        KeyCode::Enter => handleenter(app)?,
+        _ => {}
+    }
     Ok(())
 }
 
@@ -199,7 +275,11 @@ pub fn handleenter(app: &mut App) -> Result<()> {
                     app.currentplaylistidx = selectedidx as u32; // update context
                     app.queue = app.playlists[selectedidx].tracks.clone();
                     app.currentqueueidx = 0; // start from beginning
-                    app.queuestate.select(Some(0));
+
+                    let startidx = app.tracksstate.selected().unwrap_or(0);
+                    app.currentqueueidx = startidx as u32;
+                    app.queuestate.select(Some(startidx));
+
                     app.playing = true;
                     backend::playcurrenttrack(app)?;
                 }
@@ -208,16 +288,20 @@ pub fn handleenter(app: &mut App) -> Result<()> {
         CurrentColumn::Tracks => {
             if let Some(selectedtrackidx) = app.tracksstate.selected() {
                 let playlistidx = app.playliststate.selected().unwrap_or(0) as usize;
-                let tracks = &app.playlists[playlistidx].tracks;
                 // check playlist index validity
-                if playlistidx < app.playlists.len() && selectedtrackidx < tracks.len() {
-                    app.currentplaylistidx = playlistidx as u32; // update context
-                    // set queue starting from selected track
-                    app.queue = tracks[selectedtrackidx..].to_vec();
-                    app.currentqueueidx = 0; // start from beginning of new queue
-                    app.queuestate.select(Some(0));
-                    app.playing = true;
-                    backend::playcurrenttrack(app)?;
+                if playlistidx < app.playlists.len() {
+                    let currentplaylist = &app.playlists[playlistidx].tracks;
+                    // check track index validity
+                    if selectedtrackidx < currentplaylist.len() {
+                        app.currentplaylistidx = playlistidx as u32;
+                        // create queue starting from selected track
+                        app.queue = currentplaylist.clone();
+                        // set current song to selected track
+                        app.currentqueueidx = selectedtrackidx as u32;
+                        app.queuestate.select(Some(selectedtrackidx as usize));
+                        app.playing = true;
+                        backend::playcurrenttrack(app)?;
+                    }
                 }
             }
         }

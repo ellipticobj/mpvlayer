@@ -55,6 +55,7 @@ mv target/release/mpvlayer /usr/local/bin/mpvlayer
 - [x] queue
 - [x] repeat
 - [x] shuffle
+- [ ] fix repeat none acting like repeat all
 - [ ] fix weird bug where mpvlayer thinks the playing song is the first song in the playlist when enter is pressed in another song in the playlists column
 - [ ] add playlists from youtube
 - [ ] song caching

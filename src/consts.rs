@@ -1,8 +1,10 @@
 use std::process::Child;
 use ratatui::widgets::ListState;
+use std::fs::File;
 
 pub static MAXQUEUELENGTH: usize = 50;
 pub static MPVSOCKET: &str = "/tmp/mpvsocket";
+pub static LOCKPATH: &str = "/tmp/mpvlayer.lock";
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Track {
@@ -33,10 +35,18 @@ pub enum CurrentColumn {
 }
 
 #[derive(Debug)]
+pub struct PopupState {
+    pub onscreen: bool,
+    pub title: String,
+    pub message: Vec<String>
+}
+
+#[derive(Debug)]
 pub struct App {
-    pub running: bool,      // is the app running
-    pub playing: bool,      // is music playing
-    pub version: String,    // app version (x.x.x)
+    pub running: bool,          // is the app running
+    pub playing: bool,          // is music playing
+    pub version: String,        // app version (x.x.x)
+    pub repeatedinstance: bool, // stores if app is the second instance
 
     pub playlists: Vec<Playlist>,               // list of playlists
     pub queue: Vec<Track>,                      // queue of tracks
@@ -53,8 +63,11 @@ pub struct App {
     pub mpv: Option<Child>, // mpv process
 
     pub currentcolumn: CurrentColumn, // currently selected column (track, playlist, queue)
-
     pub playliststate: ListState,  // currently selecetd playlist
     pub tracksstate: ListState,     // currently selected track
-    pub queuestate: ListState       // currently selected track in queue
+    pub queuestate: ListState,      // currently selected track in queue
+
+    pub lockfile: Option<File>,     // lock file for single instance check
+    pub popup: PopupState,          // popup 
 }
+

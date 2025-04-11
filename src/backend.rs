@@ -4,76 +4,6 @@ use rand::seq::SliceRandom;
 use serde_json::Value;
 use crate::consts::{App, RepeatType, Track, MAXQUEUELENGTH, MPVSOCKET};
 
-/// gets duration of video using yt-dlp
-/// 
-/// # arguments
-/// * 'url' - url of the video
-/// 
-/// # returns
-/// * 'duration' - duration of the video in M:SS format
-fn getduration(url: &str) -> Result<String> {
-    let output = Command::new("yt-dlp")
-        .arg("--get-duration")
-        .arg(url)
-        .arg("--no-warnings")
-        .output()?;
-
-    if !output.status.success() {
-        return Err(anyhow::anyhow!("failed to get vids"));
-    }
-
-    let duration = String::from_utf8(output.stdout)?;
-
-    Ok(duration)
-}
-
-/// gets title of video using yt-dlp
-/// 
-/// # arguments
-/// * 'url' - url of the video
-/// 
-/// # returns
-/// * 'title' - title of the video as a String
-fn gettitle(url: &str) -> Result<String> {
-    let output = Command::new("yt-dlp")
-        .arg("--get-title")
-        .arg(url)
-        .arg("--no-warnings")
-        .output()?;
-
-    if !output.status.success() {
-        return Err(anyhow::anyhow!("failed to get title"));
-    }
-
-    let title = String::from_utf8(output.stdout)?;
-
-    Ok(title)
-}
-
-/// gets artist of video using yt-dlp
-/// 
-/// # arguments
-/// * 'url' - url of the video
-/// 
-/// # returns
-/// * 'artist' - artist of the video as a String
-fn getartist(url: &str) -> Result<String> {
-    let output = Command::new("yt-dlp")
-        .arg("--print")
-        .arg("'$(channel)s'")
-        .arg(url)
-        .arg("--no-warnings")
-        .output()?;
-
-    if !output.status.success() {
-        return Err(anyhow::anyhow!("failed to get artist"));
-    }
-
-    let artist = String::from_utf8(output.stdout)?;
-
-    Ok(artist)
-}
-
 /// gets list of video ids from playlist using yt-dlp
 /// 
 /// # arguments
@@ -96,23 +26,6 @@ pub fn getvidsfromplaylist(url: &str) -> Result<Vec<String>> {
     let ids = idstr.split("\n").map(|s| videourlfromid(s.to_string())).collect();
 
     Ok(ids)
-}
-
-/// gets metadata of video using yt-dlp
-/// 
-/// # arguments
-/// * 'url' - url of the video
-/// 
-/// # returns
-/// * 'duration' - duration of the video in M:SS format
-/// * 'title' - title of the video as a String
-/// * 'artist' - artist of the video as a String
-pub fn getmetadata(url: &str) -> Result<(String, String, String), anyhow::Error> {
-    let duration = getduration(url)?;
-    let title = gettitle(url)?;
-    let artist = getartist(url)?;
-
-    Ok((duration, title, artist))
 }
 
 /// gets playlist url from id
@@ -150,17 +63,17 @@ pub fn pause(mpvsocket: &str) -> Result<()> {
         .stdout(Stdio::piped())
         .spawn()?;
 
-    if let Some(echo_stdout) = echo_output.stdout {
-        let socat_output = Command::new("socat")
+    if let Some(echoout) = echo_output.stdout {
+        let socatout = Command::new("socat")
             .arg("-")
             .arg(mpvsocket)
-            .stdin(Stdio::from(echo_stdout)) 
+            .stdin(Stdio::from(echoout)) 
             .stdout(Stdio::null()) 
             .stderr(Stdio::piped()) 
             .output()?;
 
-        if !socat_output.status.success() {
-            let stderr = String::from_utf8_lossy(&socat_output.stderr);
+        if !socatout.status.success() {
+            let stderr = String::from_utf8_lossy(&socatout.stderr);
             eprintln!("failed to send pause command to mpv: {}", stderr);
         }
     } else {
@@ -178,6 +91,9 @@ pub fn pause(mpvsocket: &str) -> Result<()> {
 /// # returns
 /// * 'position' - current playback position in seconds as u32
 pub fn getplaybackpos(mpvsocket: &str) -> Result<u32> {
+    // Add timeout for socket operations
+    let timeout = std::time::Duration::from_secs(2);
+    
     // unique request ID for this request
     let requestid = rand::random::<u32>();
     
@@ -186,12 +102,14 @@ pub fn getplaybackpos(mpvsocket: &str) -> Result<u32> {
         .stdout(Stdio::piped())
         .spawn()?;
 
-    if let Some(echo_stdout) = echoout.stdout {
+    if let Some(echoout) = echoout.stdout {
         // send the command to mpv via socket and capture the output
         let socatout = Command::new("socat")
+            .arg("-T")
+            .arg(timeout.as_secs().to_string())
             .arg("-")
             .arg(mpvsocket)
-            .stdin(Stdio::from(echo_stdout))
+            .stdin(Stdio::from(echoout))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()?;
@@ -207,7 +125,53 @@ pub fn getplaybackpos(mpvsocket: &str) -> Result<u32> {
         
         // parse the response JSON
         if let Ok(json) = serde_json::from_str::<Value>(&response) {
-            // Extract the position value
+            // extract the position value
+            if let Some(data) = json.get("data") {
+                if let Some(position) = data.as_f64() {
+                    return Ok(position.floor() as u32); // convert to u32 (seconds)
+                }
+            }
+        }
+        
+        // return 0 if we couldn't parse the position
+        return Ok(0);
+    } else {
+        eprintln!("failed to get stdout from echo command");
+        return Ok(0); // return 0 on error
+    }
+}
+
+pub fn gettotalduration(mpvsocket: &str) -> Result<u32> {
+    // unique request ID for this request
+    let requestid = rand::random::<u32>();
+    
+    let echoout = Command::new("echo")
+        .arg(format!(r#"{{"command":["get_property","duration"], "request_id": {}}}"#, requestid))
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    if let Some(echoout) = echoout.stdout {
+        // send the command to mpv via socket and capture the output
+        let socatout = Command::new("socat")
+            .arg("-")
+            .arg(mpvsocket)
+            .stdin(Stdio::from(echoout))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()?;
+
+        if !socatout.status.success() {
+            let stderr = String::from_utf8_lossy(&socatout.stderr);
+            eprintln!("failed to get total duration from mpv: {}", stderr);
+            return Ok(0);
+        }
+
+        // parse the JSON response
+        let response = String::from_utf8_lossy(&socatout.stdout);
+        
+        // parse the response JSON
+        if let Ok(json) = serde_json::from_str::<Value>(&response) {
+            // extract the position value
             if let Some(data) = json.get("data") {
                 if let Some(position) = data.as_f64() {
                     return Ok(position.floor() as u32); // convert to u32 (seconds)
@@ -224,7 +188,7 @@ pub fn getplaybackpos(mpvsocket: &str) -> Result<u32> {
 }
 
 /// kills all currently running mpv processes using kill
-/// 
+/// TODO: deprecate this
 /// # arguments
 /// * none
 /// 
@@ -292,12 +256,15 @@ pub fn playcurrenttrack(app: &mut App) -> Result<()> {
     // --- reset progress timer ---
     app.currentdurationsecs = 0;
 
+    // socket cleanup
+    let _ = std::fs::remove_file(MPVSOCKET);
+
     // println!("attempting to play: '{}' from {}", tracktitle, trackurl); // debug print
     let childproc = std::process::Command::new("mpv")
         .arg("--no-video")
         .arg("--no-terminal")
         .arg(format!("--input-ipc-server={}", MPVSOCKET))
-        .arg("--pause=no")
+        .arg("--pause") // start paused to give app time to get total duration
         .arg("--keep-open=yes")
         // .arg("--no-audio-display")? .arg("--vo=null")? // audio-only if needed 
         // .arg("--really-quiet") // quieter output 
@@ -308,6 +275,9 @@ pub fn playcurrenttrack(app: &mut App) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("failed to spawn mpv for url '{}': {}", trackurl, e))?;
     
     std::thread::sleep(std::time::Duration::from_millis(100));
+
+    app.queue[trackidx].duration = gettotalduration(MPVSOCKET)?;
+
     app.mpv = Some(childproc);
     Ok(())
 }
@@ -320,7 +290,7 @@ pub fn playcurrenttrack(app: &mut App) -> Result<()> {
 /// # returns
 /// * none
 pub fn playnexttrack(app: &mut App) -> Result<()> {
-    if app.queue.is_empty() {
+    if app.queue.is_empty() || !app.currentqueueidx < app.queue.len() as u32 - 1 {
         return Ok(());
     }
 
@@ -433,14 +403,13 @@ pub fn repeatqueue(app: &mut App) -> Result<()> {
                 }
             },
             RepeatType::One => {
-                // store current queue for later
-                app.queuebeforerepeat = Some(app.queue.clone());
                 // get current song
                 let currentsong = app.queue[app.currentqueueidx as usize].clone();
                 // repeat current song MAXQUEUELENGTH times
                 app.queue = vec![currentsong; MAXQUEUELENGTH as usize];
             },
             RepeatType::None => {
+                app.queuebeforerepeat = Some(app.queue.clone());
                 // for no repeat, we need to ensure the queue is in its original state
                 if let Some(ref original) = app.queuebeforerepeat {
                     app.queue = original.clone();

@@ -1,9 +1,6 @@
-use std::mem::transmute;
-
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Style}, text::Line, widgets::{Block, BorderType, Borders, Gauge, List, ListItem, Paragraph}, Frame
+    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Style}, text::{Line, Text}, widgets::{Block, BorderType, Borders, Gauge, List, ListItem, Paragraph}, Frame
 };
-use ratatui_textarea::TextArea;
 
 use crate::consts::{App, CurrentColumn, Track};
 
@@ -265,10 +262,13 @@ fn getsonginfocont(queue: &Vec<Track>, currentqueueidx: u32, shuffle: bool, repe
 }
 
 fn getprettyduration(secs: u32) -> String {
-    // changes duration from seconds to m:ss
+    // Add bounds checking
+    if secs == u32::MAX {
+        return String::from("--:--");
+    }
+    
     let minutes = secs / 60;
     let seconds = secs % 60;
-
     format!("{}:{:02}", minutes, seconds)
 }
 
@@ -309,9 +309,14 @@ fn windowsizepass(frame: &Frame) -> bool {
     let width = termwin.width;
     let height = termwin.height;
 
-    if width < 60 || height < 10 {
+    // Add more granular size checks
+    if width < 40 {
+        // TODO: minimal mode with reduced features 
+        true
+    } else if width < 60 || height < 10 {
         false
     } else {
+        // TODO: full mode
         true
     }
 }
@@ -327,8 +332,8 @@ fn windowsizepass(frame: &Frame) -> bool {
 /// * nothing
 pub fn rendermainview(app: &mut App, frame: &mut Frame, areas: (Rect, Rect, Rect, Rect, Rect, Rect, Rect)) {
     let sizecheck = windowsizepass(frame);
-
-    if sizecheck {
+    let isrepeated = app.repeatedinstance;
+    if sizecheck && !isrepeated {
         let (playlists, tracks, queue, controls, songinfo, progressbar, credits) = areas;
 
         let playlistscont = getplaylistscont(&app.playlists, app.currentcolumn == CurrentColumn::Playlists);
@@ -361,6 +366,27 @@ pub fn rendermainview(app: &mut App, frame: &mut Frame, areas: (Rect, Rect, Rect
 
         let queuecont = getqueuecont(&app.queue, app.currentcolumn == CurrentColumn::Queue);
         frame.render_stateful_widget(queuecont, queue, &mut app.queuestate);
+
+        // render popup after everything else
+        renderpopup(app, frame);
+    } else if isrepeated {
+        let area = frame.area();
+        let displaytext = vec![
+            Line::from("Another instance of mpvlayer is already running"),
+            Line::from(""),
+            Line::from("Press Enter to quit")
+        ];
+        
+        let cont = Paragraph::new(displaytext)
+            .block(
+                Block::default()
+                    .border_type(BorderType::Rounded)
+                    .borders(Borders::ALL)
+            )
+            .style(Style::default().fg(Color::Magenta))
+            .alignment(ratatui::layout::Alignment::Center);
+
+        frame.render_widget(cont, area);
     } else {
         let area = frame.area();
         let displaytext = vec![
@@ -379,5 +405,79 @@ pub fn rendermainview(app: &mut App, frame: &mut Frame, areas: (Rect, Rect, Rect
             .wrap(ratatui::widgets::Wrap { trim: true });
 
         frame.render_widget(cont, area);
-    };
+    }
+
+}
+
+/// centers a rect
+/// 
+/// # arguments
+/// * `rect` - the rect to center
+/// * `area` - the area to center in
+/// 
+/// # returns
+/// * the centered rect
+pub fn centerrect(rect: Rect, area: Rect) -> Rect {
+    let x = (area.width - rect.width) / 2;
+    let y = (area.height - rect.height) / 2;
+    Rect::new(x, y, rect.width, rect.height)
+}
+
+/// PRIVATE function that renders a popup
+/// 
+/// # arguments
+/// * `app` - mutable reference to the app state
+/// * `frame` - mutable reference to the frame to render on
+/// 
+/// # returns
+/// * nothing
+fn renderpopup(app: &mut App, frame: &mut Frame) {
+    if app.popup.onscreen {
+        let area = frame.area();
+        let popuparea = centerrect(Rect::new(0, 0, 40, 10), area);
+        let popupcont = Paragraph::new(Text::from(app.popup.message.clone().iter().map(|s| Line::from(s.clone())).collect::<Vec<Line>>()))
+            .block(
+                Block::default()
+                    .border_type(BorderType::Rounded)
+                    .borders(Borders::ALL)
+                    .title(app.popup.title.clone())
+            )
+            .style(Style::default().fg(Color::Magenta))
+            .alignment(ratatui::layout::Alignment::Center)
+            .wrap(ratatui::widgets::Wrap { trim: true });
+
+        frame.render_widget(popupcont, popuparea);
+    }
+}
+
+/// creates a popup
+/// 
+/// # arguments
+/// * `app` - mutable reference to the app state
+/// * `frame` - mutable reference to the frame to render on
+/// * `title` - the title of the popup
+/// * `message` - the message of the popup
+/// 
+/// # returns
+/// * nothing
+pub fn renderopup(app: &mut App, frame: &mut Frame, title: String, message: Vec<String>) {
+    app.popup.onscreen = true;
+    app.popup.title = title;
+    app.popup.message = message;
+    renderpopup(app, frame);
+}
+
+/// clears a popup
+///
+/// # arguments
+/// * `app` - mutable reference to the app state
+/// * `frame` - mutable reference to the frame to render on
+/// 
+/// # returns
+/// * nothing
+pub fn clearpopup(app: &mut App, frame: &mut Frame) {
+    app.popup.onscreen = false;
+    app.popup.title = String::from("");
+    app.popup.message = Vec::new();
+    renderpopup(app, frame);
 }
