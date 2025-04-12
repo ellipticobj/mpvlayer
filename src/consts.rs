@@ -37,6 +37,7 @@ pub enum CurrentColumn {
 #[derive(Debug)]
 pub struct PopupState {
     pub onscreen: bool,
+    pub dangerous: bool,
     pub title: String,
     pub message: Vec<String>
 }

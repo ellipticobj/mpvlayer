@@ -134,6 +134,9 @@ pub fn onkey(app: &mut App, key: KeyCode) -> Result<()> {
     if app.popup.onscreen {
         if key == KeyCode::Enter {
             app.popup.onscreen = false;
+            if app.popup.dangerous {
+                app.running = false;
+            }
             return Ok(());
         }
         return Ok(());

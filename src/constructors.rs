@@ -460,10 +460,11 @@ fn renderpopup(app: &mut App, frame: &mut Frame) {
 /// 
 /// # returns
 /// * nothing
-pub fn renderopup(app: &mut App, frame: &mut Frame, title: String, message: Vec<String>) {
+pub fn showpopup(app: &mut App, frame: &mut Frame, title: String, message: Vec<String>, dangerous: bool) {
     app.popup.onscreen = true;
     app.popup.title = title;
     app.popup.message = message;
+    app.popup.dangerous = dangerous;
     renderpopup(app, frame);
 }
 
@@ -479,5 +480,6 @@ pub fn clearpopup(app: &mut App, frame: &mut Frame) {
     app.popup.onscreen = false;
     app.popup.title = String::from("");
     app.popup.message = Vec::new();
+    app.popup.dangerous = false;
     renderpopup(app, frame);
 }

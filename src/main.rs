@@ -115,6 +115,7 @@ fn main() -> Result<()> {
         lockfile: None,
         popup: PopupState {
             onscreen: false,
+            dangerous: false,
             title: String::from(""),
             message: Vec::new()
         }
@@ -122,6 +123,11 @@ fn main() -> Result<()> {
 
     app::firstrun(&mut app)?;
     let mut counter: u8 = 0;
+
+    // --- draw announcement popups, etc etc ---
+    terminal.draw(|frame| {
+        // constructors::showpopup(&mut app, frame, String::from("hello"), vec![String::from("world")], false);
+    })?;
 
     // --- main loop ---
     while app.running {
