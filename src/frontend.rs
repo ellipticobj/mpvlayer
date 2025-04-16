@@ -84,10 +84,13 @@ fn handleinput(
     match key {
         KeyCode::Char('q') => *running = false,
         KeyCode::Char(' ') => backend.play()?, // toggle play/pause
-        KeyCode::Char('>') => backend.nexttrack()?,
-        KeyCode::Char('<') => backend.prevtrack()?,
-        KeyCode::Char('s') => backend.toggleshuffle()?,
-        KeyCode::Char('r') => backend.cyclerepeat()?,
+        KeyCode::Char('>') => backend.next()?,
+        KeyCode::Char('<') => {
+            // TODO: restart song when < 10 secs
+            backend.prev()?
+        },
+        KeyCode::Char('s') => backend.toggleshuffle(),
+        KeyCode::Char('r') => backend.cyclerepeat(),
         // TODO: Navigation (Up/Down/Left/Right) to update UI state
         KeyCode::Up => { /* ... update selection ... */ }
         KeyCode::Enter => { /* ... select track or playlist ... */ }

@@ -5,6 +5,7 @@ use crate::models::*;
 use anyhow::Result;
 use std::process::Child;
 use std::process::{Command, Stdio};
+use crate::models::{PlayerState, QueueState};
 
 pub struct Backend {
     state: AppState,
@@ -20,10 +21,11 @@ impl Backend {
                 playlists: Vec::new(),
                 player: PlayerState {
                     isplaying: false,
-                    currenttrack: None,
                     currenttime: 0,
-                    queue: Vec::new(),
-                    currentqueueidx: 0,
+                    queuestate: QueueState {
+                        queue: Vec::new(),
+                        history: Vec::new(),
+                    },
                     repeatmode: RepeatMode::None,
                     shuffle: false,
                 },
@@ -48,6 +50,7 @@ impl Backend {
         } else {
             
         }
+        self.state.player.isplaying = true;
         Ok(())
     }
     
@@ -84,55 +87,116 @@ impl Backend {
         self.state.player.isplaying = false;
         Ok(())
     }
-
-    pub fn nexttrack(&mut self) -> Result<()> {
+    
+    /// plays next track in queue
+    ///
+    /// # arguments
+    /// - none
+    ///
+    /// # returns
+    /// - none
+    pub fn next(&mut self) -> Result<()> {
         // TODO: move to next track in queue based on repeat/shuffle settings
         // - update self.state.player.currentqueueidx and currenttrack
         // - call play() if needed
+        if let Some(track) = self.state.player.queuestate.queue.get(0).cloned() {
+            self.state.player.queuestate.history.push(track);
+            self.state.player.queuestate.queue.remove(0);
+            self.play()?;
+        }
         Ok(())
     }
-
-    pub fn prevtrack(&mut self) -> Result<()> {
+    
+    /// plays previous track (last track in history)
+    ///
+    /// # arguments
+    /// - none
+    ///
+    /// # returns
+    /// - none
+    pub fn prev(&mut self) -> Result<()> {
         // TODO: move to previous track in queue based on repeat settings
         // - update self.state.player.currentqueueidx and currenttrack
         // - call play() if needed
+        if let Some(track) = self.state.player.queuestate.history.pop() {
+            self.state.player.queuestate.queue.insert(0, track);
+        }
+        self.play()?;
         Ok(())
     }
-
-    pub fn toggleshuffle(&mut self) -> Result<()> {
+    
+    /// toggles shuffle
+    ///
+    /// # arguments
+    /// - none
+    ///
+    /// # returns
+    /// - none
+    pub fn toggleshuffle(&mut self) {
         // TODO: toggle shuffle mode and reshuffle queue if needed
         // - update self.state.player.shuffle
-        Ok(())
+        self.state.player.shuffle = !self.state.player.shuffle;
     }
-
-    pub fn cyclerepeat(&mut self) -> Result<()> {
+    
+    /// cycles through repeat modes
+    /// None -> One -> All -> None
+    ///
+    /// # arguments
+    /// - none
+    ///
+    /// # returns
+    /// - none
+    pub fn cyclerepeat(&mut self) {
         // TODO: cycle through repeat modes (None -> All -> One -> None)
         // - update self.state.player.repeatmode
-        Ok(())
+        self.state.player.repeatmode = match self.state.player.repeatmode {
+            RepeatMode::None => RepeatMode::One,
+            RepeatMode::One => RepeatMode::All,
+            RepeatMode::All => RepeatMode::None
+        };
     }
 
     // --- queue and playlist management ---
-    pub fn setqueue(&mut self, tracks: Vec<Track>) {
+
+    pub fn setqueue(&mut self, tracks: Vec<Track>, clearhistory: bool) {
         // TODO: set the playback queue
         // - update self.state.player.queue
         // - reset currentqueueidx if needed
+        self.state.player.queuestate.queue = tracks;
+        if clearhistory {
+            self.state.player.queuestate.history.clear();
+        }
     }
 
     pub fn addtoqueue(&mut self, track: Track) {
         // TODO: Add a track to the end of the queue
         // - append to self.state.player.queue
+        self.state.player.queuestate.queue.push(track);
     }
 
-    pub fn selecttrackfromqueue(&mut self, index: usize) -> Result<()> {
+    pub fn playnext(&mut self, track: Track) {
+        // TODO: Add a track to the end of the queue
+        // - append to self.state.player.queue
+        self.state.player.queuestate.queue.insert(0, track);
+    }
+
+
+    pub fn playtrackfromqueue(&mut self, index: usize) -> Result<()> {
         // TODO: Set the current track based on queue index
         // - update self.state.player.currentqueueidx and currenttrack
         // - trigger playback
+        if let Some(track) = self.state.player.queuestate.queue.get(index).cloned() {
+            self.state.player.queuestate.history.push(track);
+            self.state.player.queuestate.queue.remove(index);
+        }
+        self.play()?;
         Ok(())
     }
 
     pub fn addplaylist(&mut self, playlist: Playlist) {
         // TODO: Add a playlist to the list
         // - append to self.state.playlists
+        self.state.playlists.push(playlist)
     }
     
     /// selects playlist
@@ -144,9 +208,9 @@ impl Backend {
     /// - none
     pub fn selectplaylist(&mut self, index: usize) -> Result<()> {
         if index <= self.state.playlists.len() {
-            self.selection.selectedplaylist = Some(index as u32);
+            self.selection.selectedplaylist = Some(index);
         } else if !self.state.playlists.is_empty() { 
-            self.selection.selectedplaylist = Some(self.state.playlists.len() as u32);
+            self.selection.selectedplaylist = Some(self.state.playlists.len());
         } else {
             self.selection.selectedplaylist = None;
         }
@@ -186,12 +250,12 @@ impl Backend {
         &self.state.player.shuffle
     }
 
-    pub fn getcurrentsong(&self) -> &Option<Track> {
-        &self.state.player.currenttrack
+    pub fn getcurrentsong(&self) -> Option<&Track> {
+        self.state.player.queuestate.queue.get(0)
     }
 
     pub fn getqueue(&self) -> &Vec<Track> {
-        &self.state.player.queue
+        &self.state.player.queuestate.queue
     }
 
     // --- cleanup (called on app exit) ---

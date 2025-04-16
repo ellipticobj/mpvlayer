@@ -32,7 +32,9 @@ fn main() -> Result<()> {
         // initialize the backend
         let mut backend = Backend::new();
         // TODO: Maybe load some initial test data into the backend if needed
-        backend.addplaylist(models::Playlist { name: "Test Playlist".to_string(), tracks: Vec::new() });
+        let testtrack = models::Track { title: "test track".to_string(), artist: "unknown".to_string(), url: "https://example.com".to_string() };
+        backend.addplaylist(models::Playlist { name: "Test Playlist".to_string(), tracks: vec![] });
+        backend.addtoqueue(testtrack);
     
         let mut inputbuffer = String::new();
     
@@ -77,7 +79,7 @@ fn main() -> Result<()> {
                     println!("current playing state: {}", backend.getplayingstate());
                 }
                 "next" => {
-                    if let Err(e) = backend.nexttrack() {
+                    if let Err(e) = backend.next() {
                         println!("error going to next track: {}", e);
                     } else {
                         println!("next command sent.");
@@ -85,11 +87,12 @@ fn main() -> Result<()> {
                     println!("current track: {:?}", backend.getcurrentsong());
                 }
                 "prev" => {
-                    if let Err(e) = backend.prevtrack() {
+                    if let Err(e) = backend.prev() {
                         println!("error going to previous track: {}", e);
                     } else {
                         println!("prev command sent.");
                     }
+                    println!("current track: {:?}", backend.getcurrentsong());
                 }
                 "state" => {
                     // print the current backend state
@@ -102,7 +105,6 @@ fn main() -> Result<()> {
                         let track = models::Track {
                             title: format!("track at {}", url),
                             artist: "unknown".to_string(),
-                            duration: 0,
                             url,
                         };
                         backend.addtoqueue(track);
@@ -111,13 +113,13 @@ fn main() -> Result<()> {
                         println!("usage: add <url>");
                     }
                     println!("current queue:");
-                    for (i, track) in backend.getstate().player.queue.iter().enumerate() {
+                    for (i, track) in backend.getstate().player.queuestate.queue.iter().enumerate() {
                         println!("  {}: {} - {}", i, track.artist, track.title);
                     }
                 }
                 "queue" => {
                     println!("current queue:");
-                    for (i, track) in backend.getstate().player.queue.iter().enumerate() {
+                    for (i, track) in backend.getstate().player.queuestate.queue.iter().enumerate() {
                         println!("  {}: {} - {}", i, track.artist, track.title);
                     }
                 }
