@@ -83,7 +83,7 @@ fn handleinput(
     // Handle input based on app state
     match key {
         KeyCode::Char('q') => *running = false,
-        KeyCode::Char(' ') => backend.play()?, // toggle play/pause
+        KeyCode::Char(' ') => backend.playpause()?, // toggle play/pause
         KeyCode::Char('>') => backend.next()?,
         KeyCode::Char('<') => {
             // TODO: restart song when < 10 secs
@@ -92,8 +92,11 @@ fn handleinput(
         KeyCode::Char('s') => backend.toggleshuffle(),
         KeyCode::Char('r') => backend.cyclerepeat(),
         // TODO: Navigation (Up/Down/Left/Right) to update UI state
-        KeyCode::Up => { /* ... update selection ... */ }
-        KeyCode::Enter => { /* ... select track or playlist ... */ }
+        KeyCode::Up => backend.prevrow(),
+        KeyCode::Down => backend.nextrow(),
+        KeyCode::Left => backend.prevcolumn(),
+        KeyCode::Right => backend.nextcolumn(),
+        KeyCode::Enter => { /* ... play selected track or playlist ... */ }
         _ => {}
     }
     Ok(())

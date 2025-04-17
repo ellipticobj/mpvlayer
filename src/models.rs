@@ -29,6 +29,18 @@ pub enum RepeatMode {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShuffleState {
+    pub shuffle: bool,
+    pub originalqueue: Vec<Track>
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RepeatState {
+    pub repeatmode: RepeatMode,
+    pub originalqueue: Vec<Track>
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QueueState {
     pub queue: Vec<Track>,
     pub history: Vec<Track>
@@ -39,8 +51,8 @@ pub struct PlayerState {
     pub isplaying: bool,
     pub currenttime: u32, // in seconds
     pub queuestate: QueueState, 
-    pub repeatmode: RepeatMode,
-    pub shuffle: bool,
+    pub repeatstate: RepeatState,
+    pub shufflestate: ShuffleState,
 }
 
 pub struct SelectionState {

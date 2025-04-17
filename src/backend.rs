@@ -26,9 +26,15 @@ impl Backend {
                         queue: Vec::new(),
                         history: Vec::new(),
                     },
-                    repeatmode: RepeatMode::None,
-                    shuffle: false,
-                },
+                    repeatmode: RepeatState {
+                        repeatmode: RepeatMode::None,
+                        originalqueue: vec![]
+                    },
+                    shuffle: ShuffleState {
+                        shuffle: false,
+                        originalqueue: vec![]
+                    }
+                }
             },
             selection: SelectionState {
                 selectedcolumn: CurrentColumn::Playlists, // playlists column selected on startup
@@ -40,35 +46,37 @@ impl Backend {
     }
 
     // --- playback control methods ---
-    pub fn play(&mut self) -> Result<()> {
-        // TODO: implement logic to start/resume playback with mpv
-        // v if no track is selected, select the first in queue or do nothing
-        // - update self.state.player.isplaying
-        // - spawn or communicate with mpv process
-        if self.selection.selectedtrack.is_none() {
-            
-        } else {
-            
-        }
-        self.state.player.isplaying = true;
-        Ok(())
-    }
-    
-    /// pauses playback
-    /// sends a pause command to mpv using sockets 
+
+    /// plays or pauses the current track depending on current state
     ///
     /// # arguments
     /// - none
-    ///
+    /// 
     /// # returns
     /// - none
-    pub fn pause(&mut self) -> Result<()> {
-        let echo_output = Command::new("echo")
+    pub fn playpause(&mut self) -> Result<()> {
+        if self.state.player.isplaying {
+            self.pause()?;
+        } else {
+            self.unpause()?;
+        }
+        Ok(())
+    }
+
+    /// unpauses the current track in the queue
+    /// 
+    /// # arguments
+    /// - none
+    /// 
+    /// # returns
+    /// - none
+    fn unpause(&mut self) -> Result<()> {
+        let echooutput = Command::new("echo")
             .arg(r#"{"command": ["cycle", "pause"]}"#)
             .stdout(Stdio::piped())
             .spawn()?;
 
-        if let Some(echoout) = echo_output.stdout {
+        if let Some(echoout) = echooutput.stdout {
             let socatout = Command::new("socat")
                 .arg("-")
                 .arg("/tmp/mpvlayer")
@@ -76,7 +84,6 @@ impl Backend {
                 .stdout(Stdio::null()) 
                 .stderr(Stdio::piped()) 
                 .output()?;
-
             if !socatout.status.success() {
                 let stderr = String::from_utf8_lossy(&socatout.stderr);
                 eprintln!("failed to send pause command to mpv: {}", stderr);
@@ -87,7 +94,40 @@ impl Backend {
         self.state.player.isplaying = false;
         Ok(())
     }
-    
+
+    /// pauses playback
+    /// sends a pause command to mpv using sockets 
+    ///
+    /// # arguments
+    /// - none
+    ///
+    /// # returns
+    /// - none
+    fn pause(&mut self) -> Result<()> {
+        let echooutput = Command::new("echo")
+            .arg(r#"{"command": ["cycle", "pause"]}"#)
+            .stdout(Stdio::piped())
+            .spawn()?;
+        
+        if let Some(echoout) = echooutput.stdout {
+            let socatout = Command::new("socat")
+                .arg("-")
+                .arg("/tmp/mpvlayer")
+                .stdin(Stdio::from(echoout)) 
+                .stdout(Stdio::null()) 
+                .stderr(Stdio::piped()) 
+                .output()?;
+            if !socatout.status.success() {
+                let stderr = String::from_utf8_lossy(&socatout.stderr);
+                eprintln!("failed to send pause command to mpv: {}", stderr);
+            }
+        } else {
+            eprintln!("failed to get stdout from echo command");
+        }
+        self.state.player.isplaying = false;
+        Ok(())
+    }
+
     /// plays next track in queue
     ///
     /// # arguments
@@ -96,17 +136,14 @@ impl Backend {
     /// # returns
     /// - none
     pub fn next(&mut self) -> Result<()> {
-        // TODO: move to next track in queue based on repeat/shuffle settings
-        // - update self.state.player.currentqueueidx and currenttrack
-        // - call play() if needed
         if let Some(track) = self.state.player.queuestate.queue.get(0).cloned() {
             self.state.player.queuestate.history.push(track);
             self.state.player.queuestate.queue.remove(0);
-            self.play()?;
+            self.playsong()?;
         }
         Ok(())
     }
-    
+
     /// plays previous track (last track in history)
     ///
     /// # arguments
@@ -115,16 +152,13 @@ impl Backend {
     /// # returns
     /// - none
     pub fn prev(&mut self) -> Result<()> {
-        // TODO: move to previous track in queue based on repeat settings
-        // - update self.state.player.currentqueueidx and currenttrack
-        // - call play() if needed
         if let Some(track) = self.state.player.queuestate.history.pop() {
             self.state.player.queuestate.queue.insert(0, track);
         }
-        self.play()?;
+        self.playsong()?;
         Ok(())
     }
-    
+
     /// toggles shuffle
     ///
     /// # arguments
@@ -133,11 +167,19 @@ impl Backend {
     /// # returns
     /// - none
     pub fn toggleshuffle(&mut self) {
-        // TODO: toggle shuffle mode and reshuffle queue if needed
-        // - update self.state.player.shuffle
-        self.state.player.shuffle = !self.state.player.shuffle;
+        self.state.player.shufflestate.shuffle = !self.state.player.shufflestate.shuffle;
+        self.shufflequeue();
     }
-    
+
+    fn shufflequeue(&mut self) {
+        if self.state.player.shuffle && self.state.player.queuestate.queue.len() > 1 {
+            
+            let current = self.state.player.queuestate.queue.remove(0);
+            self.state.player.queuestate.queue.shufflestate.shuffle(&mut rand::thread_rng());
+            self.state.player.queuestate.queue.insert(0, current);
+        }
+    }
+
     /// cycles through repeat modes
     /// None -> One -> All -> None
     ///
@@ -147,9 +189,7 @@ impl Backend {
     /// # returns
     /// - none
     pub fn cyclerepeat(&mut self) {
-        // TODO: cycle through repeat modes (None -> All -> One -> None)
-        // - update self.state.player.repeatmode
-        self.state.player.repeatmode = match self.state.player.repeatmode {
+        self.state.player.repeatstate.repeatmode = match self.state.player.repeatstate.repeatmode {
             RepeatMode::None => RepeatMode::One,
             RepeatMode::One => RepeatMode::All,
             RepeatMode::All => RepeatMode::None
@@ -158,47 +198,56 @@ impl Backend {
 
     // --- queue and playlist management ---
 
+    /// sets the playback queue
+    ///
+    /// # arguments
+    /// - tracks (Vec<Track>): tracks to set as queue
+    /// - clearhistory (bool): whether to clear the playback history
+    ///
+    /// # returns
+    /// - none
     pub fn setqueue(&mut self, tracks: Vec<Track>, clearhistory: bool) {
-        // TODO: set the playback queue
-        // - update self.state.player.queue
-        // - reset currentqueueidx if needed
         self.state.player.queuestate.queue = tracks;
         if clearhistory {
             self.state.player.queuestate.history.clear();
         }
     }
 
+    /// adds a song to the end of the queue
+    ///
+    /// # arguments
+    /// - track (Track): track to add
+    ///
+    /// # returns
+    /// - none
     pub fn addtoqueue(&mut self, track: Track) {
-        // TODO: Add a track to the end of the queue
-        // - append to self.state.player.queue
         self.state.player.queuestate.queue.push(track);
     }
 
+    /// adds a song to the start of the queue
+    ///
+    /// # arguments
+    /// - track (Track): track to add
+    ///
+    /// # returns
+    /// - none
     pub fn playnext(&mut self, track: Track) {
-        // TODO: Add a track to the end of the queue
-        // - append to self.state.player.queue
         self.state.player.queuestate.queue.insert(0, track);
     }
 
-
     pub fn playtrackfromqueue(&mut self, index: usize) -> Result<()> {
-        // TODO: Set the current track based on queue index
-        // - update self.state.player.currentqueueidx and currenttrack
-        // - trigger playback
         if let Some(track) = self.state.player.queuestate.queue.get(index).cloned() {
             self.state.player.queuestate.history.push(track);
             self.state.player.queuestate.queue.remove(index);
         }
-        self.play()?;
+        self.playsong()?;
         Ok(())
     }
 
     pub fn addplaylist(&mut self, playlist: Playlist) {
-        // TODO: Add a playlist to the list
-        // - append to self.state.playlists
         self.state.playlists.push(playlist)
     }
-    
+
     /// selects playlist
     ///
     /// # arguments
@@ -217,12 +266,138 @@ impl Backend {
         Ok(())
     }
 
-    pub fn playsong(&mut self, playlistindex: usize, trackindex: Option<usize>) -> Result<()> {
-        // TODO: check if index is within bounds
-        // - set queue to playlist tracks
-        // - select first track or specified track
-        // - trigger playback
+    fn playsong(&mut self) -> Result<()> {
+        if self.state.player.queuestate.queue.is_empty() {
+            return Ok(());
+        }
+        
+        let currenturl = &self.state.player.queuestate.queue[0].url;
+        
+        if let Some(mut process) = self.mpvprocess.take() {
+            let _ = process.kill();
+        }
+        
+        self.mpvprocess = Some(Command::new("mpv")
+            .arg(currenturl)
+            .arg("--input-ipc-server=/tmp/mpvlayer")
+            .arg("--no-video")
+            .arg("--no-terminal")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?);
+        
+        self.state.player.isplaying = true;
         Ok(())
+    }
+
+    // --- navigation ---
+    
+    /// selects the next column, stops at queue
+    /// playlists > tracks > queue > queue
+    ///
+    /// # arguments
+    /// - none
+    ///
+    /// # returns
+    /// - none
+    pub fn nextcolumn(&mut self) {
+        self.selection.selectedcolumn = match self.selection.selectedcolumn {
+            CurrentColumn::Playlists => CurrentColumn::Tracks,
+            CurrentColumn::Tracks => CurrentColumn::Queue,
+            CurrentColumn::Queue => CurrentColumn::Queue,
+        };
+    }
+
+    /// selects the previous column, stops at playlists
+    /// playlists < playlists < tracks < queue
+    ///
+    /// # arguments
+    /// - none
+    ///
+    /// # returns
+    /// - none
+    pub fn prevcolumn(&mut self) {
+        self.selection.selectedcolumn = match self.selection.selectedcolumn {
+            CurrentColumn::Playlists => CurrentColumn::Playlists,
+            CurrentColumn::Tracks => CurrentColumn::Playlists,
+            CurrentColumn::Queue => CurrentColumn::Tracks,
+        };
+    }
+
+    /// selects the next row, stops at the last one
+    pub fn nextrow(&mut self) {
+        match self.selection.selectedcolumn {
+            CurrentColumn::Playlists => {
+                let current = self.selection.selectedplaylist.unwrap_or(0);
+                let numberofplaylists = self.state.playlists.len();
+                let next = if current + 1 >= numberofplaylists {
+                    numberofplaylists // change to 0 to cycle
+                } else {
+                    current + 1
+                };
+                self.selection.selectedplaylist = Some(next);
+            },
+            CurrentColumn::Tracks => {
+                if let Some(playlistidx) = self.selection.selectedplaylist {
+                    if let Some(playlist) = self.state.playlists.get(playlistidx) {
+                        let current = self.selection.selectedtrack.unwrap_or(0);
+                        let numberoftracks = playlist.tracks.len();
+                        let next = if current + 1 >= numberoftracks {
+                            numberoftracks // change to 0 to cycle
+                        } else {
+                            current + 1
+                        };
+                        self.selection.selectedtrack = Some(next);
+                    }
+                }
+            },
+            CurrentColumn::Queue => {
+                let current = self.selection.selectedtrack.unwrap_or(0);
+                let queuelength = self.state.player.queuestate.queue.len();
+                let next = if current >= queuelength - 1 {
+                    queuelength // change to 0 to cycle
+                } else {
+                    current + 1
+                };
+                self.selection.selectedtrack = Some(next);
+            }
+        }
+    }
+
+    pub fn prevrow(&mut self) {
+        match self.selection.selectedcolumn {
+            CurrentColumn::Playlists => {
+                let current = self.selection.selectedplaylist.unwrap_or(0);
+                let next = if current <= 0 {
+                     0
+                } else {
+                    current - 1
+                };
+                self.selection.selectedplaylist = Some(next);
+            },
+            CurrentColumn::Tracks => {
+                if let Some(playlistidx) = self.selection.selectedplaylist {
+                    if let Some(playlist) = self.state.playlists.get(playlistidx) {
+                        let current = self.selection.selectedtrack.unwrap_or(0);
+                        let next = if current <= 0 {
+                             0
+                        } else {
+                            current - 1
+                        };
+                        self.selection.selectedtrack = Some(next);
+                    }
+                }
+            },
+            CurrentColumn::Queue => {
+                let current = self.selection.selectedtrack.unwrap_or(0);
+                let next = if current <= 0 {
+                    0
+                } else {
+                    current - 1
+                };
+                self.selection.selectedtrack = Some(next);
+            }
+        }
     }
 
     // --- state access methods (for frontend to read) ---
@@ -260,9 +435,10 @@ impl Backend {
 
     // --- cleanup (called on app exit) ---
     pub fn shutdown(&mut self) -> Result<()> {
-        // TODO: clean up resources
-        // - kill mpv process if running
-        // - any other cleanup
+        if let Some(mut process) = self.mpvprocess.take() {
+            let _ = process.kill();
+        }
+        
         Ok(())
     }
 }

@@ -63,7 +63,7 @@ fn main() -> Result<()> {
             // execute commands
             match command {
                 "play" => {
-                    if let Err(e) = backend.play() {
+                    if let Err(e) = backend.playpause() {
                         println!("error playing: {}", e);
                     } else {
                         println!("play command sent.");
@@ -71,7 +71,7 @@ fn main() -> Result<()> {
                     println!("current playing state: {}", backend.getplayingstate());
                 }
                 "pause" => {
-                    if let Err(e) = backend.pause() {
+                    if let Err(e) = backend.playpause() {
                         println!("error pausing: {}", e);
                     } else {
                         println!("pause command sent.");
