@@ -3,9 +3,11 @@
 
 use crate::models::*;
 use anyhow::Result;
+use rand::{seq::SliceRandom, rng};
 use std::process::Child;
 use std::process::{Command, Stdio};
-use crate::models::{PlayerState, QueueState};
+use crate::models::{AppState, PlayerState, QueueState, RepeatState, RepeatMode, ShuffleState, SelectionState, CurrentColumn, MAXQUEUELENGTH, MPVSOCKET};
+use serde_json;
 
 pub struct Backend {
     state: AppState,
@@ -16,7 +18,7 @@ pub struct Backend {
 impl Backend {
     pub fn new() -> Self {
         // initialize the backend 
-        Backend {
+        let backend = Backend {
             state: AppState {
                 playlists: Vec::new(),
                 player: PlayerState {
@@ -26,11 +28,11 @@ impl Backend {
                         queue: Vec::new(),
                         history: Vec::new(),
                     },
-                    repeatmode: RepeatState {
+                    repeatstate: RepeatState {
                         repeatmode: RepeatMode::None,
                         originalqueue: vec![]
                     },
-                    shuffle: ShuffleState {
+                    shufflestate: ShuffleState {
                         shuffle: false,
                         originalqueue: vec![]
                     }
@@ -42,7 +44,9 @@ impl Backend {
                 selectedtrack: None,
             },
             mpvprocess: None,
-        }
+        };
+        
+        backend
     }
 
     // --- playback control methods ---
@@ -75,7 +79,7 @@ impl Backend {
             .arg(r#"{"command": ["cycle", "pause"]}"#)
             .stdout(Stdio::piped())
             .spawn()?;
-
+        
         if let Some(echoout) = echooutput.stdout {
             let socatout = Command::new("socat")
                 .arg("-")
@@ -139,7 +143,7 @@ impl Backend {
         if let Some(track) = self.state.player.queuestate.queue.get(0).cloned() {
             self.state.player.queuestate.history.push(track);
             self.state.player.queuestate.queue.remove(0);
-            self.playsong()?;
+            self.handlerepeat()?;
         }
         Ok(())
     }
@@ -172,11 +176,21 @@ impl Backend {
     }
 
     fn shufflequeue(&mut self) {
-        if self.state.player.shuffle && self.state.player.queuestate.queue.len() > 1 {
+        if self.state.player.shufflestate.shuffle && self.state.player.queuestate.queue.len() > 1 {
+            if self.state.player.shufflestate.originalqueue.is_empty() {
+                self.state.player.shufflestate.originalqueue = self.state.player.queuestate.queue.clone();
+            }
             
             let current = self.state.player.queuestate.queue.remove(0);
-            self.state.player.queuestate.queue.shufflestate.shuffle(&mut rand::thread_rng());
+            
+            self.state.player.queuestate.queue.shuffle(&mut rng());
+            
             self.state.player.queuestate.queue.insert(0, current);
+        } else if !self.state.player.shufflestate.shuffle {
+            if !self.state.player.shufflestate.originalqueue.is_empty() {
+                self.state.player.queuestate.queue = self.state.player.shufflestate.originalqueue.clone();
+                self.state.player.shufflestate.originalqueue.clear();
+            }
         }
     }
 
@@ -195,6 +209,35 @@ impl Backend {
             RepeatMode::All => RepeatMode::None
         };
     }
+
+    fn handlerepeat(&mut self) -> Result<()> {
+        if self.state.player.queuestate.queue.is_empty() {
+            match self.state.player.repeatstate.repeatmode {
+                RepeatMode::None => {
+                    // do nothing
+                },
+                RepeatMode::One => {
+                    // if we just played a track, put it back in the queue
+                    if let Some(last_track) = self.state.player.queuestate.history.last().cloned() {
+                        self.state.player.queuestate.queue.insert(0, last_track);
+                        self.playsong()?;
+                    }
+                },
+                RepeatMode::All => {
+                    // move all history back to queue and start again
+                    let mut history = Vec::new();
+                    std::mem::swap(&mut history, &mut self.state.player.queuestate.history);
+                    history.reverse(); // To maintain original order
+                    self.state.player.queuestate.queue = history;
+                    if !self.state.player.queuestate.queue.is_empty() {
+                        self.playsong()?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
 
     // --- queue and playlist management ---
 
@@ -369,7 +412,7 @@ impl Backend {
             CurrentColumn::Playlists => {
                 let current = self.selection.selectedplaylist.unwrap_or(0);
                 let next = if current <= 0 {
-                     0
+                    0
                 } else {
                     current - 1
                 };
@@ -380,7 +423,7 @@ impl Backend {
                     if let Some(playlist) = self.state.playlists.get(playlistidx) {
                         let current = self.selection.selectedtrack.unwrap_or(0);
                         let next = if current <= 0 {
-                             0
+                            0
                         } else {
                             current - 1
                         };
@@ -418,11 +461,107 @@ impl Backend {
     }
 
     pub fn getrepeatstate(&self) -> &RepeatMode {
-        &self.state.player.repeatmode
+        &self.state.player.repeatstate.repeatmode
     }
 
     pub fn getshufflestate(&self) -> &bool {
-        &self.state.player.shuffle
+        &self.state.player.shufflestate.shuffle
+    }
+
+    pub fn getelapsedduration(&self) -> Result<u32> {
+         // Add timeout for socket operations
+        let timeout = std::time::Duration::from_secs(2);
+        
+        // unique request ID for this request
+        let requestid = rand::random::<u32>();
+        
+        let echoout = Command::new("echo")
+            .arg(format!(r#"{{"command":["get_property","time-pos"], "request_id": {}}}"#, requestid))
+            .stdout(Stdio::piped())
+            .spawn()?;
+        
+        if let Some(echoout) = echoout.stdout {
+            // send the command to mpv via socket and capture the output
+            let socatout = Command::new("socat")
+                .arg("-T")
+                .arg(timeout.as_secs().to_string())
+                .arg("-")
+                .arg(MPVSOCKET)
+                .stdin(Stdio::from(echoout))
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()?;
+        
+            if !socatout.status.success() {
+                let stderr = String::from_utf8_lossy(&socatout.stderr);
+                eprintln!("failed to get playback position from mpv: {}", stderr);
+                return Ok(0);
+            }
+            
+            // parse the JSON response
+            let response = String::from_utf8_lossy(&socatout.stdout);
+            
+            // parse the response JSON
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&response) {
+                // extract the position value
+                if let Some(data) = json.get("data") {
+                    if let Some(position) = data.as_f64() {
+                        return Ok(position.floor() as u32); // convert to u32 (seconds)
+                    }
+                }
+            }
+            
+            // return 0 if we couldn't parse the position
+            return Ok(0);
+        } else {
+            eprintln!("failed to get stdout from echo command");
+            return Ok(0); // return 0 on error
+        }
+    }
+
+    pub fn gettotalduration(&self) -> Result<u32> {
+        let requestid = rand::random::<u32>();
+        
+        let echoout = Command::new("echo")
+            .arg(format!(r#"{{"command":["get_property","duration"], "request_id": {}}}"#, requestid))
+            .stdout(Stdio::piped())
+            .spawn()?;
+        
+        if let Some(echoout) = echoout.stdout {
+            // send the command to mpv via socket and capture the output
+            let socatout = Command::new("socat")
+                .arg("-")
+                .arg(MPVSOCKET)
+                .stdin(Stdio::from(echoout))
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()?;
+            
+            if !socatout.status.success() {
+                let stderr = String::from_utf8_lossy(&socatout.stderr);
+                eprintln!("failed to get total duration from mpv: {}", stderr);
+                return Ok(0);
+            }
+            
+            // parse the JSON response
+            let response = String::from_utf8_lossy(&socatout.stdout);
+            
+            // parse the response JSON
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&response) {
+                // extract the position value
+                if let Some(data) = json.get("data") {
+                    if let Some(position) = data.as_f64() {
+                        return Ok(position.floor() as u32); // convert to u32 (seconds)
+                    }
+                }
+            }
+            
+            // return 0 if we couldn't parse the position
+            return Ok(0);
+        } else {
+            eprintln!("failed to get stdout from echo command");
+            return Ok(0); // return 0 on error
+        }
     }
 
     pub fn getcurrentsong(&self) -> Option<&Track> {

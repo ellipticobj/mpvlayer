@@ -1,6 +1,9 @@
 // models.rs
 // shared data structures for the music player app.
 
+pub const MAXQUEUELENGTH: usize = 100;
+pub const MPVSOCKET: &str = "/tmp/mpvsocket";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CurrentColumn {
     Playlists,
@@ -55,6 +58,7 @@ pub struct PlayerState {
     pub shufflestate: ShuffleState,
 }
 
+#[derive(Clone, Debug)]
 pub struct SelectionState {
     pub selectedcolumn: CurrentColumn,
     pub selectedplaylist: Option<usize>, 
