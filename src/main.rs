@@ -11,30 +11,23 @@ use anyhow::Result;
 use backend::Backend;
 use frontend::runfrontend;
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 
 fn main() -> Result<()> {
-    if !DEBUG {
-        // initialize backend
-        let mut backend = Backend::new();
-
-        // start frontend, passing the backend for interaction
-        runfrontend(&mut backend)?;
-
-        // cleanup (handled by frontend for now, or call backend.shutdown() if needed)
-        // backend cleanup
-        backend.shutdown()?;
-
-    } else {
+    if DEBUG {
         println!("--- debug CLI ---");
         println!("available commands: play, pause, next, prev, state, add <url>, queue, exit, help");
     
         // initialize the backend
         let mut backend = Backend::new();
-        // TODO: Maybe load some initial test data into the backend if needed
-        let testtrack = models::Track { title: "test track".to_string(), artist: "unknown".to_string(), url: "https://example.com".to_string() };
-        backend.addplaylist(models::Playlist { name: "Test Playlist".to_string(), tracks: vec![] });
-        backend.addtoqueue(testtrack);
+
+        // dummy track
+        let testtrack = models::Track { title: "losing interest".to_string(), artist: "adore".to_string(), url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string() };
+        let testtrack1 = models::Track { title: "losing interest but again".to_string(), artist: "adore".to_string(), url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string() };
+        backend::set::addplaylist(&mut backend, models::Playlist { name: "sigma 1".to_string(), tracks: vec![testtrack.clone()] });
+        backend::set::addplaylist(&mut backend, models::Playlist { name: "sigma 2".to_string(), tracks: vec![testtrack1.clone()] });
+        backend::set::addtoqueue(&mut backend, testtrack);
+        backend::set::addtoqueue(&mut backend, testtrack1);
     
         let mut inputbuffer = String::new();
     
@@ -63,40 +56,40 @@ fn main() -> Result<()> {
             // execute commands
             match command {
                 "play" => {
-                    if let Err(e) = backend.playpause() {
+                    if let Err(e) = backend::set::playpause(&mut backend, ) {
                         println!("error playing: {}", e);
                     } else {
                         println!("play command sent.");
                     }
-                    println!("current playing state: {}", backend.getplayingstate());
+                    println!("current playing state: {}", backend::get::playingstate(&backend));
                 }
                 "pause" => {
-                    if let Err(e) = backend.playpause() {
+                    if let Err(e) = backend::set::playpause(&mut backend, ) {
                         println!("error pausing: {}", e);
                     } else {
                         println!("pause command sent.");
                     }
-                    println!("current playing state: {}", backend.getplayingstate());
+                    println!("current playing state: {}", backend::get::playingstate(&backend));
                 }
                 "next" => {
-                    if let Err(e) = backend.next() {
+                    if let Err(e) = backend::set::next(&mut backend, ) {
                         println!("error going to next track: {}", e);
                     } else {
                         println!("next command sent.");
                     }
-                    println!("current track: {:?}", backend.getcurrentsong());
+                    println!("current track: {:?}", backend::get::currentsong(&backend));
                 }
                 "prev" => {
-                    if let Err(e) = backend.prev() {
+                    if let Err(e) = backend::set::prev(&mut backend, ) {
                         println!("error going to previous track: {}", e);
                     } else {
                         println!("prev command sent.");
                     }
-                    println!("current track: {:?}", backend.getcurrentsong());
+                    println!("current track: {:?}", backend::get::currentsong(&backend));
                 }
                 "state" => {
                     // print the current backend state
-                    println!("{:#?}", backend.getstate());
+                    println!("{:#?}", backend::get::state(&backend));
                 }
                 "add" => {
                     if args.len() == 1 {
@@ -107,19 +100,19 @@ fn main() -> Result<()> {
                             artist: "unknown".to_string(),
                             url,
                         };
-                        backend.addtoqueue(track);
+                        backend::set::addtoqueue(&mut backend, track);
                         println!("added track to queue.");
                     } else {
                         println!("usage: add <url>");
                     }
                     println!("current queue:");
-                    for (i, track) in backend.getstate().player.queuestate.queue.iter().enumerate() {
+                    for (i, track) in backend::get::state(&backend).player.queuestate.queue.iter().enumerate() {
                         println!("  {}: {} - {}", i, track.artist, track.title);
                     }
                 }
                 "queue" => {
                     println!("current queue:");
-                    for (i, track) in backend.getstate().player.queuestate.queue.iter().enumerate() {
+                    for (i, track) in backend::get::state(&backend).player.queuestate.queue.iter().enumerate() {
                         println!("  {}: {} - {}", i, track.artist, track.title);
                     }
                 }
@@ -135,7 +128,21 @@ fn main() -> Result<()> {
                 }
             }
         }
-    }
+    } else {
+        // initialize backend
+        let mut backend = Backend::new();
+
+        // dummy track
+        let testtrack = models::Track { title: "losing interest".to_string(), artist: "adore".to_string(), url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string() };
+        let testtrack1 = models::Track { title: "losing interest but again".to_string(), artist: "adore".to_string(), url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string() };
+        backend::set::addplaylist(&mut backend, models::Playlist { name: "sigma 1".to_string(), tracks: vec![testtrack.clone()] });
+        backend::set::addplaylist(&mut backend, models::Playlist { name: "sigma 2".to_string(), tracks: vec![testtrack1.clone()] });
+        backend::set::addtoqueue(&mut backend, testtrack);
+        backend::set::addtoqueue(&mut backend, testtrack1);
+
+        // start frontend, passing the backend for interaction
+        runfrontend(backend)?;
+    } 
 
     Ok(())
 }
