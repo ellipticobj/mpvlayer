@@ -1,10 +1,10 @@
 // models.rs
 // shared data structures for the music player app.
 
-pub const VERSION: &str = "0.0.1";
-pub const MAXQUEUELENGTH: usize = 100;
+pub const VERSION: &str = "0.0.0a";
 pub const MPVSOCKET: &str = "/tmp/mpvsocket";
 pub const SONGINFOPERCENT: u16 = 60;
+pub const DEBUG: bool = false;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CurrentColumn {
@@ -46,19 +46,19 @@ pub enum RepeatMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShuffleState {
     pub shuffle: bool,
-    pub originalqueue: Vec<Track>
+    pub originalqueue: Vec<Track>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RepeatState {
     pub repeatmode: RepeatMode,
-    pub originalqueue: Vec<Track>
+    pub originalqueue: Vec<Track>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QueueState {
     pub queue: Vec<Track>,
-    pub history: Vec<Track>
+    pub history: Vec<Track>,
 }
 
 #[derive(Clone, Debug)]
@@ -74,7 +74,7 @@ pub struct SelectionState {
     pub selectedcolumn: CurrentColumn,
     pub playliststate: ratatui::widgets::ListState,
     pub trackstate: ratatui::widgets::ListState,
-    pub queuestate: ratatui::widgets::ListState
+    pub queuestate: ratatui::widgets::ListState,
 }
 #[derive(Clone, Debug)]
 pub struct AppState {

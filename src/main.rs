@@ -6,143 +6,137 @@ mod frontend;
 mod models;
 
 use std::io::{self, Write};
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use anyhow::Result;
 use backend::Backend;
+use crossterm::{
+    event, execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
 use frontend::runfrontend;
+use ratatui::{backend::CrosstermBackend, Terminal};
 
-const DEBUG: bool = false;
+fn prerunchecks() -> Result<()> {
+    // check for mpv and socat installations
+    let mpvcheck = Command::new("mpv")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    if let Err(_) = mpvcheck {
+        return Err(anyhow::anyhow!("mpv is not installed or not in PATH"));
+    }
+
+    let socatcheck = Command::new("socat")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    if let Err(_) = socatcheck {
+        return Err(anyhow::anyhow!("socat is not installed or not in PATH"));
+    }
+
+    // clean up any existing socket file
+    if std::path::Path::new(models::MPVSOCKET).exists() {
+        let _ = std::fs::remove_file(models::MPVSOCKET);
+    }
+
+    Ok(())
+}
 
 fn main() -> Result<()> {
-    if DEBUG {
-        println!("--- debug CLI ---");
-        println!("available commands: play, pause, next, prev, state, add <url>, queue, exit, help");
-    
-        // initialize the backend
-        let mut backend = Backend::new();
+    // run pre-startup checks
+    if let Err(e) = prerunchecks() {
+        // if prerunchecks fail, start a minimal UI just to show the error
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen)?;
+        let backendtui = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backendtui)?;
 
-        // dummy track
-        let testtrack = models::Track { title: "losing interest".to_string(), artist: "adore".to_string(), url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string() };
-        let testtrack1 = models::Track { title: "losing interest but again".to_string(), artist: "adore".to_string(), url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string() };
-        backend::set::addplaylist(&mut backend, models::Playlist { name: "sigma 1".to_string(), tracks: vec![testtrack.clone()] });
-        backend::set::addplaylist(&mut backend, models::Playlist { name: "sigma 2".to_string(), tracks: vec![testtrack1.clone()] });
-        backend::set::addtoqueue(&mut backend, testtrack);
-        backend::set::addtoqueue(&mut backend, testtrack1);
-    
-        let mut inputbuffer = String::new();
-    
-        // main command loop
+        // create a minimal app instance just for the error popup
+        let mut app = frontend::App::new(models::VERSION.to_string());
+
+        // show a critical error popup
+        frontend::newpopup(
+            &mut app,
+            " critical error ".to_string(),
+            vec![
+                " dependency check failed: ".to_string(),
+                format!(" {} ", e.to_string()),
+                "".to_string(),
+                " press 'q' to quit.".to_string(),
+            ],
+            true,
+        );
+
+        // force the popup to be displayed
+        terminal.draw(|frame| {
+            frontend::renderpopup(&app, frame);
+        })?;
+
+        // wait for the user to press 'q'
         loop {
-            print!("> "); // prompt
-            io::stdout().flush()?;
-    
-            // clear the buffer and read the next line
-            inputbuffer.clear();
-            if io::stdin().read_line(&mut inputbuffer)? == 0 {
-                // handle eof
-                println!("exiting...");
-                break;
-            }
-    
-            // parse the input
-            let parts: Vec<&str> = inputbuffer.trim().split_whitespace().collect();
-            if parts.is_empty() {
-                continue;
-            }
-    
-            let command = parts[0];
-            let args = &parts[1..];
-    
-            // execute commands
-            match command {
-                "play" => {
-                    if let Err(e) = backend::set::playpause(&mut backend, ) {
-                        println!("error playing: {}", e);
-                    } else {
-                        println!("play command sent.");
+            if event::poll(Duration::from_millis(100))? {
+                if let event::Event::Key(key) = event::read()? {
+                    if key.kind == event::KeyEventKind::Press
+                        && (key.code == event::KeyCode::Char('q')
+                            || key.code == event::KeyCode::Esc)
+                    {
+                        break;
                     }
-                    println!("current playing state: {}", backend::get::playingstate(&backend));
-                }
-                "pause" => {
-                    if let Err(e) = backend::set::playpause(&mut backend, ) {
-                        println!("error pausing: {}", e);
-                    } else {
-                        println!("pause command sent.");
-                    }
-                    println!("current playing state: {}", backend::get::playingstate(&backend));
-                }
-                "next" => {
-                    if let Err(e) = backend::set::next(&mut backend, ) {
-                        println!("error going to next track: {}", e);
-                    } else {
-                        println!("next command sent.");
-                    }
-                    println!("current track: {:?}", backend::get::currentsong(&backend));
-                }
-                "prev" => {
-                    if let Err(e) = backend::set::prev(&mut backend, ) {
-                        println!("error going to previous track: {}", e);
-                    } else {
-                        println!("prev command sent.");
-                    }
-                    println!("current track: {:?}", backend::get::currentsong(&backend));
-                }
-                "state" => {
-                    // print the current backend state
-                    println!("{:#?}", backend::get::state(&backend));
-                }
-                "add" => {
-                    if args.len() == 1 {
-                        let url = args[0].to_string();
-                        // create a dummy track for testing
-                        let track = models::Track {
-                            title: format!("track at {}", url),
-                            artist: "unknown".to_string(),
-                            url,
-                        };
-                        backend::set::addtoqueue(&mut backend, track);
-                        println!("added track to queue.");
-                    } else {
-                        println!("usage: add <url>");
-                    }
-                    println!("current queue:");
-                    for (i, track) in backend::get::state(&backend).player.queuestate.queue.iter().enumerate() {
-                        println!("  {}: {} - {}", i, track.artist, track.title);
-                    }
-                }
-                "queue" => {
-                    println!("current queue:");
-                    for (i, track) in backend::get::state(&backend).player.queuestate.queue.iter().enumerate() {
-                        println!("  {}: {} - {}", i, track.artist, track.title);
-                    }
-                }
-                "exit" | "quit" | "q" => {
-                    println!("exiting...");
-                    break;
-                }
-                "help" => {
-                    println!("available commands: play, pause, next, prev, state, add <url>, queue, exit, help");
-                }
-                _ => {
-                    println!("unknown command: {}", command);
                 }
             }
         }
-    } else {
-        // initialize backend
-        let mut backend = Backend::new();
 
-        // dummy track
-        let testtrack = models::Track { title: "losing interest".to_string(), artist: "adore".to_string(), url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string() };
-        let testtrack1 = models::Track { title: "losing interest but again".to_string(), artist: "adore".to_string(), url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string() };
-        backend::set::addplaylist(&mut backend, models::Playlist { name: "sigma 1".to_string(), tracks: vec![testtrack.clone()] });
-        backend::set::addplaylist(&mut backend, models::Playlist { name: "sigma 2".to_string(), tracks: vec![testtrack1.clone()] });
-        backend::set::addtoqueue(&mut backend, testtrack);
-        backend::set::addtoqueue(&mut backend, testtrack1);
+        // clean up and exit
+        execute!(io::stdout(), LeaveAlternateScreen)?;
+        disable_raw_mode()?;
+        return Ok(());
+    }
+    // initialize backend (without starting mpv)
+    let mut backend = Backend::new();
 
-        // start frontend, passing the backend for interaction
-        runfrontend(backend)?;
-    } 
+    // add sample playlists but don't start playback yet
+    let testtrack = models::Track {
+        title: "losing interest".to_string(),
+        artist: "adore".to_string(),
+        url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string(),
+    };
+    let testtrack1 = models::Track {
+        title: "losing interest but again".to_string(),
+        artist: "adore".to_string(),
+        url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string(),
+    };
+
+    let playlist1 = models::Playlist {
+        name: "sigma 1".to_string(),
+        tracks: vec![testtrack.clone(), testtrack1.clone()],
+    };
+
+    let playlist2 = models::Playlist {
+        name: "sigma 2".to_string(),
+        tracks: vec![
+            models::Track {
+                title: "1".to_string(),
+                artist: "adore".to_string(),
+                url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string(),
+            },
+            models::Track {
+                title: "2".to_string(),
+                artist: "adore".to_string(),
+                url: "https://www.youtube.com/watch?v=HtR4PkPJiBk".to_string(),
+            },
+        ],
+    };
+
+    backend::set::addplaylist(&mut backend, playlist1);
+    backend::set::addplaylist(&mut backend, playlist2);
+
+    // start frontend, passing the backend for interaction
+    runfrontend(backend)?;
 
     Ok(())
 }

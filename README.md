@@ -4,6 +4,10 @@ this is a **work in progress**
 
 a tui wrapper for mpv
 
+# buglist
+- [ ] error on skipping to next track when queue is empty
+- [ ] error when first queue ended and new queue is played
+
 ## requirements
 ### stuff you probably have to install
 cargo
@@ -29,9 +33,9 @@ or with your favorite package manager
 (https://github.com/yt-dlp/yt-dlp/wiki/Installation)
 
 #### install mpv:
-use your favorite package manager  
-or  
-https://mpv.io/installation/  
+use your favorite package manager
+or
+https://mpv.io/installation/
 
 #### install rust
 ```
@@ -48,18 +52,3 @@ mv target/release/mpvlayer /usr/local/bin/mpvlayer
 
 ## screenshots
 ![ui](assets/ui.png)
-
-## progress
-- [x] ui
-- [x] play/pause
-- [x] queue
-- [x] repeat
-- [x] shuffle
-- [ ] fix repeat none acting like repeat all
-- [ ] fix weird bug where mpvlayer thinks the playing song is the first song in the playlist when enter is pressed in another song in the playlists column
-- [ ] add playlists from youtube
-- [ ] song caching
-- [ ] edit playlists
-- [ ] attempt to restart mpv if mpv is killed
-- [ ] do not open another mpvlayer instance if one is active already
-- [ ] keep current queue if enter is pressed in queue column

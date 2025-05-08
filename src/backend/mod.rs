@@ -16,6 +16,18 @@ pub struct Backend {
 
 impl Backend {
     pub fn new() -> Self {
+        // initialize a new liststate
+        let mut playliststate = ratatui::widgets::ListState::default();
+        playliststate.select(Some(0));
+
+        // initialize track state
+        let mut trackstate = ratatui::widgets::ListState::default();
+        trackstate.select(Some(0));
+
+        // initialize queue state
+        let mut queuestate = ratatui::widgets::ListState::default();
+        queuestate.select(Some(0));
+
         // initialize the backend
         let backend = Backend {
             state: AppState {
@@ -29,19 +41,19 @@ impl Backend {
                     },
                     repeatstate: RepeatState {
                         repeatmode: RepeatMode::None,
-                        originalqueue: vec![]
+                        originalqueue: vec![],
                     },
                     shufflestate: ShuffleState {
                         shuffle: false,
-                        originalqueue: vec![]
-                    }
-                }
+                        originalqueue: vec![],
+                    },
+                },
             },
             selection: SelectionState {
                 selectedcolumn: CurrentColumn::Playlists, // playlists column selected on startup
-                playliststate: ratatui::widgets::ListState::default(),
-                trackstate: ratatui::widgets::ListState::default(),
-                queuestate: ratatui::widgets::ListState::default(),
+                playliststate,
+                trackstate,
+                queuestate,
             },
             mpvprocess: None,
         };
